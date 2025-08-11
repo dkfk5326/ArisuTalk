@@ -1,5 +1,5 @@
-import { language } from "./language";
-import { defaultPrompts } from "./defauts";
+import { language } from "./language.js";
+import { defaultPrompts, defaultCharacters } from "./defauts.js";
 
 // --- APP INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
