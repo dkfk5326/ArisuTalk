@@ -1,5 +1,8 @@
 import { language } from "./language.js";
 import { defaultPrompts, defaultCharacters } from "./defauts.js";
+import { sleep, formatDateSeparator, findMessageGroup } from "./utils.js";
+import { showInfoModal, showConfirmModal, closeModal } from "./modalManager.js";
+import { toBase64, resizeImage, encodeTextInImage, decodeTextFromImage, handleSaveCharacterToImage, loadCharacterFromImage } from "./imageUtils.js";
 
 // --- APP INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -158,9 +161,9 @@ class PersonaChatApp {
         } catch (error) {
             console.error(`Error saving to localStorage key "${key}":`, error);
             if (error.name === 'QuotaExceededError') {
-                this.showInfoModal(language.modal.noSpaceError.title, language.modal.noSpaceError.message);
+                showInfoModal(this.setState.bind(this), language.modal.noSpaceError.title, language.modal.noSpaceError.message);
             } else {
-                this.showInfoModal(language.modal.localStorageSaveError.title, language.modal.localStorageSaveError.message);
+                showInfoModal(this.setState.bind(this), language.modal.localStorageSaveError.title, language.modal.localStorageSaveError.message);
             }
         }
     }
@@ -229,14 +232,14 @@ class PersonaChatApp {
                 this.setState({ imageToSend: null });
             }
 
-            if (e.target.closest('#modal-cancel')) this.closeModal();
+            if (e.target.closest('#modal-cancel')) closeModal(this.setState.bind(this));
             if (e.target.closest('#modal-confirm')) {
                 if (this.state.modal.onConfirm) this.state.modal.onConfirm();
-                this.closeModal();
+                closeModal(this.setState.bind(this));
             }
             if (e.target.closest('#select-avatar-btn')) document.getElementById('avatar-input').click();
             if (e.target.closest('#load-card-btn')) document.getElementById('card-input').click();
-            if (e.target.closest('#save-card-btn')) this.handleSaveCharacterToImage();
+            if (e.target.closest('#save-card-btn')) handleSaveCharacterToImage(this.setState.bind(this), this.state.editingCharacter, language, encodeTextInImage);
 
 
             const deleteMsgButton = e.target.closest('.delete-msg-btn');
@@ -559,10 +562,10 @@ class PersonaChatApp {
             })();
 
             if (showDateSeparator) {
-                html += `<div class="flex justify-center my-4"><div class="flex items-center text-xs text-gray-300 bg-gray-800/80 backdrop-blur-sm px-4 py-1.5 rounded-full shadow-md"><i data-lucide="calendar" class="w-3 h-3.5 mr-2 text-gray-400"></i>${this.formatDateSeparator(new Date(msg.id))}</div></div>`;
+                html += `<div class="flex justify-center my-4"><div class="flex items-center text-xs text-gray-300 bg-gray-800/80 backdrop-blur-sm px-4 py-1.5 rounded-full shadow-md"><i data-lucide="calendar" class="w-3 h-3.5 mr-2 text-gray-400"></i>${formatDateSeparator(new Date(msg.id))}</div></div>`;
             }
 
-            const groupInfo = this.findMessageGroup(messages, i);
+            const groupInfo = findMessageGroup(messages, i);
             const isLastInGroup = i === groupInfo.endIndex;
 
             if (this.state.editingMessageId === groupInfo.lastMessageId) {
@@ -1073,17 +1076,7 @@ class PersonaChatApp {
         }
     }
 
-    showInfoModal(title, message) {
-        this.setState({ modal: { isOpen: true, title, message, onConfirm: null } });
-    }
-
-    showConfirmModal(title, message, onConfirm) {
-        this.setState({ modal: { isOpen: true, title, message, onConfirm } });
-    }
-
-    closeModal() {
-        this.setState({ modal: { isOpen: false, title: '', message: '', onConfirm: null } });
-    }
+    
 
     handleModelSelect(model) {
         this.setState({ settings: { ...this.state.settings, model } });
@@ -1145,7 +1138,7 @@ class PersonaChatApp {
             settings: { ...this.state.settings, prompts: newPrompts },
             showPromptModal: false
         });
-        this.showInfoModal(language.modal.promptSaveComplete.title, language.modal.promptSaveComplete.message);
+        showInfoModal(this.setState.bind(this), language.modal.promptSaveComplete.title, language.modal.promptSaveComplete.message);
     }
 
     openNewCharacterModal() {
@@ -1164,9 +1157,9 @@ class PersonaChatApp {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             if (isCard) {
-                this.loadCharacterFromImage(file);
+                loadCharacterFromImage(this.setState.bind(this), this.state.editingCharacter, language, decodeTextFromImage, file);
             } else {
-                this.toBase64(file).then(base64 => {
+                toBase64(file).then(base64 => {
                     const currentEditing = this.state.editingCharacter || {};
                     this.setState({ editingCharacter: { ...currentEditing, avatar: base64 } });
                 });
@@ -1179,7 +1172,7 @@ class PersonaChatApp {
         const prompt = document.getElementById('character-prompt').value.trim();
 
         if (!name || !prompt) {
-            this.showInfoModal(language.modal.characterNameDescriptionNotFulfilled.title, language.modal.characterNameDescriptionNotFulfilled.message);
+            showInfoModal(this.setState.bind(this), language.modal.characterNameDescriptionNotFulfilled.title, language.modal.characterNameDescriptionNotFulfilled.message);
             return;
         }
 
@@ -1222,7 +1215,7 @@ class PersonaChatApp {
     }
 
     handleDeleteCharacter(characterId) {
-        this.showConfirmModal(
+        showConfirmModal(this.setState.bind(this), 
             language.modal.deleteCharacter.title, language.modal.deleteCharacter.message,
             () => {
                 const newCharacters = this.state.characters.filter(c => c.id !== characterId);
@@ -1248,20 +1241,20 @@ class PersonaChatApp {
         if (!file) return;
 
         if (file.size > 5 * 1024 * 1024) { // 5MB limit
-            this.showInfoModal(language.modal.imageFileSizeExceeded.title, language.modal.imageFileSizeExceeded.message);
+            showInfoModal(this.setState.bind(this), language.modal.imageFileSizeExceeded.title, language.modal.imageFileSizeExceeded.message);
             e.target.value = '';
             return;
         }
 
         try {
-            const resizedDataUrl = await this.resizeImage(file, 800, 800); // Resize to max 800x800
+            const resizedDataUrl = await resizeImage(file, 800, 800); // Resize to max 800x800
             this.setState({
                 imageToSend: { dataUrl: resizedDataUrl, file },
                 showInputOptions: false
             });
         } catch (error) {
             console.error("Image processing error:", error);
-            this.showInfoModal(language.modal.imageProcessingError.title, language.modal.imageProcessingError.message);
+            showInfoModal(this.setState.bind(this), language.modal.imageProcessingError.title, language.modal.imageProcessingError.message);
         } finally {
             e.target.value = '';
         }
@@ -1275,7 +1268,7 @@ class PersonaChatApp {
         if (type === 'image' && !imageToSend) return;
 
         if (!settings.apiKey) {
-            this.showInfoModal(language.modal.apiKeyRequired.title, language.modal.apiKeyRequired.message);
+            showInfoModal(this.setState.bind(this), language.modal.apiKeyRequired.title, language.modal.apiKeyRequired.message);
             this.setState({ showSettingsModal: true });
             return;
         }
@@ -1376,7 +1369,7 @@ class PersonaChatApp {
             }
         }
 
-        await this.sleep(response.reactionDelay || 1000);
+        await sleep(response.reactionDelay || 1000);
         this.setState({ isWaitingForResponse: false, typingCharacterId: chatId });
 
 
@@ -1387,7 +1380,7 @@ class PersonaChatApp {
             for (let i = 0; i < response.messages.length; i++) {
                 const messagePart = response.messages[i];
 
-                await this.sleep(messagePart.delay || 1000);
+                await sleep(messagePart.delay || 1000);
 
                 const botMessage = {
                     id: Date.now() + Math.random(),
@@ -1541,9 +1534,9 @@ class PersonaChatApp {
     }
 
     handleDeleteMessage(lastMessageId) {
-        this.showConfirmModal(language.modal.messageGroupDeleteConfirm.title, language.modal.messageGroupDeleteConfirm.message, () => {
+        showConfirmModal(this.setState.bind(this), language.modal.messageGroupDeleteConfirm.title, language.modal.messageGroupDeleteConfirm.message, () => {
             const currentMessages = this.state.messages[this.state.selectedChatId] || [];
-            const groupInfo = this.findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
+            const groupInfo = findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
             if (!groupInfo) return;
 
             const updatedMessages = [
@@ -1566,12 +1559,12 @@ class PersonaChatApp {
         const newContent = textarea.value.trim();
 
         const currentMessages = this.state.messages[this.state.selectedChatId] || [];
-        const groupInfo = this.findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
+        const groupInfo = findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
         if (!groupInfo) return;
 
         const originalMessage = currentMessages[groupInfo.startIndex];
         if (originalMessage.type === 'text' && !newContent) {
-            this.showInfoModal(language.modal.messageEmptyError.title, language.modal.messageEmptyError.message);
+            showInfoModal(this.setState.bind(this), language.modal.messageEmptyError.title, language.modal.messageEmptyError.message);
             return;
         }
 
@@ -1601,7 +1594,7 @@ class PersonaChatApp {
 
     async handleRerollMessage(lastMessageId) {
         const currentMessages = this.state.messages[this.state.selectedChatId] || [];
-        const groupInfo = this.findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
+        const groupInfo = findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
         if (!groupInfo) return;
 
         const truncatedMessages = currentMessages.slice(0, groupInfo.startIndex);
@@ -1624,87 +1617,9 @@ class PersonaChatApp {
     }
 
 
-    // --- HELPER FUNCTIONS ---
-    toBase64 = file => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = error => reject(error);
-    });
+    
 
-    resizeImage = (file, maxWidth, maxHeight) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target.result;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-
-                if (width > height) {
-                    if (width > maxWidth) {
-                        height *= maxWidth / width;
-                        width = maxWidth;
-                    }
-                } else {
-                    if (height > maxHeight) {
-                        width *= maxHeight / height;
-                        height = maxHeight;
-                    }
-                }
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', 0.8)); // Use JPEG for smaller size
-            };
-            img.onerror = (error) => reject(error);
-        };
-        reader.onerror = (error) => reject(error);
-    });
-
-    sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-    formatDateSeparator = (date) => {
-        return new Intl.DateTimeFormat('ko-KR', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            weekday: 'long',
-        }).format(date);
-    };
-
-    findMessageGroup(messages, index) {
-        const message = messages[index];
-        if (!message) return null;
-
-        let startIndex = index;
-        for (let i = index - 1; i >= 0; i--) {
-            if (messages[i].isMe === message.isMe && (new Date(messages[i + 1].id) - new Date(messages[i].id) < 60000)) {
-                startIndex = i;
-            } else {
-                break;
-            }
-        }
-
-        let endIndex = index;
-        for (let i = index + 1; i < messages.length; i++) {
-            if (messages[i].isMe === message.isMe && (new Date(messages[i].id) - new Date(messages[i - 1].id) < 60000)) {
-                endIndex = i;
-            } else {
-                break;
-            }
-        }
-
-        return {
-            startIndex: startIndex,
-            endIndex: endIndex,
-            firstMessageId: messages[startIndex].id,
-            lastMessageId: messages[endIndex].id
-        };
-    }
+    
 
     // --- KEYBOARD VISIBILITY HANDLER ---
     addKeyboardListeners() {
@@ -1782,153 +1697,11 @@ class PersonaChatApp {
     }
 
     // --- CHARACTER CARD FUNCTIONS ---
-    encodeTextInImage(imageData, text) {
-        const data = imageData.data;
-        const textBytes = new TextEncoder().encode(text);
-        const textLength = textBytes.length;
-        const headerSizeInPixels = 8;
+    
 
-        const availableDataPixels = (data.length / 4) - headerSizeInPixels;
+    
 
-        if (textLength > availableDataPixels) {
-            console.error(`Image is too small. Required: ${textLength}, Available: ${availableDataPixels}`);
-            this.showInfoModal(language.modal.imageTooSmallOrCharacterInfoTooLong.title,
-                language.modal.imageTooSmallOrCharacterInfoTooLong.message);
-            return null;
-        }
-
-        data[3] = 0x50; data[7] = 0x43; data[11] = 0x41; data[15] = 0x52;
-        data[19] = (textLength >> 24) & 0xFF;
-        data[23] = (textLength >> 16) & 0xFF;
-        data[27] = (textLength >> 8) & 0xFF;
-        data[31] = textLength & 0xFF;
-
-        for (let i = 0; i < textLength; i++) {
-            data[(headerSizeInPixels + i) * 4 + 3] = textBytes[i];
-        }
-        return imageData;
-    }
-
-    decodeTextFromImage(imageData) {
-        const data = imageData.data;
-        const headerSizeInPixels = 8;
-
-        if (data[3] !== 0x50 || data[7] !== 0x43 || data[11] !== 0x41 || data[15] !== 0x52) {
-            return null;
-        }
-
-        const textLength = (data[19] << 24) | (data[23] << 16) | (data[27] << 8) | data[31];
-
-        if (textLength <= 0 || textLength > (data.length / 4) - headerSizeInPixels) {
-            return null;
-        }
-
-        const textBytes = new Uint8Array(textLength);
-        for (let i = 0; i < textLength; i++) {
-            textBytes[i] = data[(headerSizeInPixels + i) * 4 + 3];
-        }
-
-        try {
-            return new TextDecoder().decode(textBytes);
-        } catch (e) {
-            return null;
-        }
-    }
-
-    async handleSaveCharacterToImage() {
-        const name = document.getElementById('character-name').value.trim();
-        if (!name) {
-            this.showInfoModal(language.modal.characterCardNoNameError.title, language.modal.characterCardNoNameError.message);
-            return;
-        }
-        const currentAvatar = this.state.editingCharacter?.avatar;
-        if (!currentAvatar) {
-            this.showInfoModal(language.modal.characterCardNoAvatarImageError.title, language.modal.characterCardNoAvatarImageError.message);
-            return;
-        }
-
-        const memoryNodes = document.querySelectorAll('.memory-input');
-        const memories = Array.from(memoryNodes).map(input => input.value.trim()).filter(Boolean);
-
-        const proactiveToggle = document.getElementById('character-proactive-toggle');
-        const proactiveEnabled = proactiveToggle ? proactiveToggle.checked : this.state.editingCharacter?.proactiveEnabled !== false;
-
-        const characterData = {
-            name: name,
-            prompt: document.getElementById('character-prompt').value.trim(),
-            responseTime: document.getElementById('character-responseTime').value,
-            thinkingTime: document.getElementById('character-thinkingTime').value,
-            reactivity: document.getElementById('character-reactivity').value,
-            tone: document.getElementById('character-tone').value,
-            source: 'PersonaChatAppCharacterCard',
-            memories: memories,
-            proactiveEnabled: proactiveEnabled,
-        };
-
-        const image = new Image();
-        image.crossOrigin = "Anonymous";
-        image.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const jsonString = JSON.stringify(characterData);
-
-            const newImageData = this.encodeTextInImage(imageData, jsonString);
-
-            if (newImageData) {
-                ctx.putImageData(newImageData, 0, 0);
-                const dataUrl = canvas.toDataURL('image/png');
-                const link = document.createElement('a');
-                link.href = dataUrl;
-                link.download = `${characterData.name}_card.png`;
-                link.click();
-            }
-        };
-        image.onerror = () => this.showInfoModal(language.modal.avatarImageLoadError.title, language.modal.avatarImageLoadError.message);
-        image.src = currentAvatar;
-    }
-
-    async loadCharacterFromImage(file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const imageSrc = e.target.result;
-            const image = new Image();
-            image.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = image.width;
-                canvas.height = image.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(image, 0, 0);
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-                try {
-                    const jsonString = this.decodeTextFromImage(imageData);
-                    if (jsonString) {
-                        const data = JSON.parse(jsonString);
-                        if (data.source === 'PersonaChatAppCharacterCard') {
-                            this.setState({
-                                editingCharacter: { ...this.state.editingCharacter, ...data, avatar: imageSrc }
-                            });
-                            this.showInfoModal(language.modal.avatarLoadSuccess.title, language.modal.avatarLoadSuccess.message);
-                            return;
-                        }
-                    }
-                } catch (err) {
-                    console.error("Failed to parse character data from image:", err);
-                }
-
-                this.showInfoModal(language.modal.characterCardNoAvatarImageInfo.title, language.modal.characterCardNoAvatarImageInfo.message);
-
-                this.setState({ editingCharacter: { ...(this.state.editingCharacter || {}), avatar: imageSrc } });
-            };
-            image.src = imageSrc;
-        };
-        reader.readAsDataURL(file);
-    }
+    
 
     // --- BACKUP & RESTORE ---
     handleBackup() {
@@ -1953,10 +1726,10 @@ class PersonaChatApp {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
-            this.showInfoModal(language.modal.backupComplete.title, language.modal.backupComplete.message);
+            showInfoModal(this.setState.bind(this), language.modal.backupComplete.title, language.modal.backupComplete.message);
         } catch (error) {
             console.error("Backup failed:", error);
-            this.showInfoModal(language.modal.backupFailed.title, language.modal.backupFailed.message);
+            showInfoModal(this.setState.bind(this), language.modal.backupFailed.title, language.modal.backupFailed.message);
         }
     }
 
@@ -1971,7 +1744,7 @@ class PersonaChatApp {
 
                 // Basic validation
                 if (backupData.settings && backupData.characters && backupData.messages && backupData.unreadCounts) {
-                    this.showConfirmModal(
+                    showConfirmModal(this.setState.bind(this),
                         language.modal.restoreConfirm.title,
                         language.modal.restoreConfirm.message,
                         () => {
@@ -1980,7 +1753,7 @@ class PersonaChatApp {
                             this.saveToLocalStorage('personaChat_messages_v16', backupData.messages);
                             this.saveToLocalStorage('personaChat_unreadCounts_v16', backupData.unreadCounts);
 
-                            this.showInfoModal(language.modal.restoreComplete.title, language.modal.restoreComplete.message);
+                            showInfoModal(this.setState.bind(this), language.modal.restoreComplete.title, language.modal.restoreComplete.message);
                             // Use a timeout to allow the user to see the confirmation modal before reloading
                             setTimeout(() => {
                                 window.location.reload();
@@ -1992,7 +1765,7 @@ class PersonaChatApp {
                 }
             } catch (error) {
                 console.error("Restore failed:", error);
-                this.showInfoModal(language.modal.restoreFailed.title, language.modal.restoreFailed.message);
+                showInfoModal(this.setState.bind(this), language.modal.restoreFailed.title, language.modal.restoreFailed.message);
             } finally {
                 // Reset file input so the same file can be selected again
                 e.target.value = '';
@@ -2018,10 +1791,10 @@ class PersonaChatApp {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
-            this.showInfoModal(language.modal.promptBackupComplete.title, language.modal.promptBackupComplete.message);
+            showInfoModal(this.setState.bind(this), language.modal.promptBackupComplete.title, language.modal.promptBackupComplete.message);
         } catch (error) {
             console.error("Prompt backup failed:", error);
-            this.showInfoModal(language.modal.promptBackupFailed.title, language.modal.promptBackupFailed.message);
+            showInfoModal(this.setState.bind(this), language.modal.promptBackupFailed.title, language.modal.promptBackupFailed.message);
         }
     }
 
@@ -2038,7 +1811,7 @@ class PersonaChatApp {
                 if (restoredPrompts.main && restoredPrompts.profile_creation &&
                     typeof restoredPrompts.main.system_rules === 'string'
                 ) {
-                    this.showConfirmModal(
+                    showConfirmModal(this.setState.bind(this),
                         language.modal.promptRestoreConfirm.title,
                         language.modal.promptRestoreConfirm.message,
                         () => {
@@ -2064,7 +1837,7 @@ class PersonaChatApp {
                 }
             } catch (error) {
                 console.error("Prompt restore failed:", error);
-                this.showInfoModal(language.modal.promptRestoreFailed.title, language.modal.promptRestoreFailed.message);
+                showInfoModal(this.setState.bind(this), language.modal.promptRestoreFailed.title, language.modal.promptRestoreFailed.message);
             } finally {
                 // Reset file input so the same file can be selected again
                 e.target.value = '';
