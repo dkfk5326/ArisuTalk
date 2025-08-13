@@ -1,6 +1,12 @@
 import { showInfoModal } from './modalManager.js';
 
-export function toBase64(file) {
+/**
+ * Converts a File object to a Base64-encoded string.
+ *
+ * @param {File} file - The file to convert.
+ * @returns {Promise<string>} A promise that resolves with the Base64-encoded string representation of the file.
+ */
+export async function toBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -9,7 +15,16 @@ export function toBase64(file) {
     });
 }
 
-export function resizeImage(file, maxWidth, maxHeight) {
+/**
+ * Resizes an image file to fit within the specified maximum width and height, preserving aspect ratio.
+ * Returns a Promise that resolves to a JPEG data URL of the resized image.
+ *
+ * @param {File} file - The image file to resize.
+ * @param {number} maxWidth - The maximum width of the resized image.
+ * @param {number} maxHeight - The maximum height of the resized image.
+ * @returns {Promise<string>} A Promise that resolves to a data URL (JPEG format) of the resized image.
+ */
+export async function resizeImage(file, maxWidth, maxHeight) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -44,6 +59,15 @@ export function resizeImage(file, maxWidth, maxHeight) {
     });
 }
 
+/**
+ * Encodes a given text string into the alpha channel of an image's pixel data.
+ * The function reserves the first 8 pixels for a header containing a magic number and the length of the text.
+ * Each subsequent pixel's alpha channel stores one byte of the encoded text.
+ *
+ * @param {ImageData} imageData - The ImageData object whose pixel data will be modified.
+ * @param {string} text - The text string to encode into the image.
+ * @returns {ImageData?} The modified ImageData with the encoded text, or null if the image is too small.
+ */
 export function encodeTextInImage(imageData, text) {
     const data = imageData.data;
     const textBytes = new TextEncoder().encode(text);
@@ -71,6 +95,16 @@ export function encodeTextInImage(imageData, text) {
     return imageData;
 }
 
+/**
+ * Decodes embedded text from image pixel data.
+ *
+ * This function expects the image data to contain a specific header signature
+ * and a length field, followed by the text bytes stored in the alpha channel
+ * of each pixel. If the header or length is invalid, it returns null.
+ *
+ * @param {ImageData} imageData - The ImageData object containing pixel data.
+ * @returns {string?} The decoded text if successful, or null if decoding fails.
+ */
 export function decodeTextFromImage(imageData) {
     const data = imageData.data;
     const headerSizeInPixels = 8;
@@ -97,7 +131,18 @@ export function decodeTextFromImage(imageData) {
     }
 }
 
-export async function handleSaveCharacterToImage(setState, characterData, language, encodeTextInImage) {
+/**
+ * Saves a character's data encoded into an avatar image as a PNG file.
+ * Displays modal dialogs for error handling (missing name, missing avatar, image load failure).
+ *
+ * @param {Function} setState - Function to update application state, typically for showing modals.
+ * @param {Object} characterData - The character data to encode into the image.
+ * @param {Object} language - Localization object containing modal dialog texts.
+ * @param {Function} encodeTextInImage - Function that encodes a string into ImageData and returns new ImageData.
+ *
+ * @returns {void} Resolves when the image is saved or an error modal is shown.
+ */
+export function handleSaveCharacterToImage(setState, characterData, language, encodeTextInImage) {
     if (!characterData.name) {
         showInfoModal(setState, language.modal.characterCardNoNameError.title, language.modal.characterCardNoNameError.message);
         return;
