@@ -239,7 +239,28 @@ class PersonaChatApp {
             }
             if (e.target.closest('#select-avatar-btn')) document.getElementById('avatar-input').click();
             if (e.target.closest('#load-card-btn')) document.getElementById('card-input').click();
-            if (e.target.closest('#save-card-btn')) handleSaveCharacterToImage(this.setState.bind(this), this.state.editingCharacter, language, encodeTextInImage);
+            if (e.target.closest('#save-card-btn')) {
+                const name = document.getElementById('character-name').value.trim();
+                const prompt = document.getElementById('character-prompt').value.trim();
+                const memoryNodes = document.querySelectorAll('.memory-input');
+                const memories = Array.from(memoryNodes).map(input => input.value.trim()).filter(Boolean);
+                const proactiveToggle = document.getElementById('character-proactive-toggle');
+                const proactiveEnabled = proactiveToggle ? proactiveToggle.checked : this.state.editingCharacter?.proactiveEnabled !== false;
+
+                const characterData = {
+                    name: name,
+                    prompt: prompt,
+                    avatar: this.state.editingCharacter?.avatar || null,
+                    responseTime: document.getElementById('character-responseTime').value,
+                    thinkingTime: document.getElementById('character-thinkingTime').value,
+                    reactivity: document.getElementById('character-reactivity').value,
+                    tone: document.getElementById('character-tone').value,
+                    source: 'PersonaChatAppCharacterCard',
+                    memories: memories,
+                    proactiveEnabled: proactiveEnabled,
+                };
+                handleSaveCharacterToImage(this.setState.bind(this), characterData, language, encodeTextInImage);
+            }
 
 
             const deleteMsgButton = e.target.closest('.delete-msg-btn');

@@ -1,3 +1,5 @@
+import { showInfoModal } from './modalManager.js';
+
 export const toBase64 = file => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -91,35 +93,16 @@ export const decodeTextFromImage = (imageData) => {
     }
 };
 
-export const handleSaveCharacterToImage = async (setState, editingCharacter, language, encodeTextInImage) => {
-    const name = document.getElementById('character-name').value.trim();
-    if (!name) {
+export const handleSaveCharacterToImage = async (setState, characterData, language, encodeTextInImage) => {
+    if (!characterData.name) {
         showInfoModal(setState, language.modal.characterCardNoNameError.title, language.modal.characterCardNoNameError.message);
         return;
     }
-    const currentAvatar = editingCharacter?.avatar;
+    const currentAvatar = characterData.avatar;
     if (!currentAvatar) {
         showInfoModal(setState, language.modal.characterCardNoAvatarImageError.title, language.modal.characterCardNoAvatarImageError.message);
         return;
     }
-
-    const memoryNodes = document.querySelectorAll('.memory-input');
-    const memories = Array.from(memoryNodes).map(input => input.value.trim()).filter(Boolean);
-
-    const proactiveToggle = document.getElementById('character-proactive-toggle');
-    const proactiveEnabled = proactiveToggle ? proactiveToggle.checked : editingCharacter?.proactiveEnabled !== false;
-
-    const characterData = {
-        name: name,
-        prompt: document.getElementById('character-prompt').value.trim(),
-        responseTime: document.getElementById('character-responseTime').value,
-        thinkingTime: document.getElementById('character-thinkingTime').value,
-        reactivity: document.getElementById('character-reactivity').value,
-        tone: document.getElementById('character-tone').value,
-        source: 'PersonaChatAppCharacterCard',
-        memories: memories,
-        proactiveEnabled: proactiveEnabled,
-    };
 
     const image = new Image();
     image.crossOrigin = "Anonymous";

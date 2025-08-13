@@ -1,4 +1,4 @@
-import { language } from "./language.js";
+
 
 export const showInfoModal = (setState, title, message) => {
     setState({ modal: { isOpen: true, title, message, onConfirm: null } });
