@@ -1,15 +1,18 @@
-export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+export function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-export const formatDateSeparator = (date) => {
+export function formatDateSeparator(date) {
     return new Intl.DateTimeFormat('ko-KR', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
         weekday: 'long',
     }).format(date);
-};
+}
 
-export const findMessageGroup = (messages, index) => {
+
+export function findMessageGroup(messages, index) {
     const message = messages[index];
     if (!message) return null;
 
@@ -37,4 +40,4 @@ export const findMessageGroup = (messages, index) => {
         firstMessageId: messages[startIndex].id,
         lastMessageId: messages[endIndex].id
     };
-};
+}

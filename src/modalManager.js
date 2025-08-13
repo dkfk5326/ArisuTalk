@@ -1,13 +1,13 @@
 
 
-export const showInfoModal = (setState, title, message) => {
+export function showInfoModal(setState, title, message) {
     setState({ modal: { isOpen: true, title, message, onConfirm: null } });
-};
+}
 
-export const showConfirmModal = (setState, title, message, onConfirm) => {
+export function showConfirmModal(setState, title, message, onConfirm) {
     setState({ modal: { isOpen: true, title, message, onConfirm } });
-};
+}
 
-export const closeModal = (setState) => {
+export function closeModal(setState) {
     setState({ modal: { isOpen: false, title: '', message: '', onConfirm: null } });
-};
+}

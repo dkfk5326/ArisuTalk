@@ -1,46 +1,50 @@
 import { showInfoModal } from './modalManager.js';
 
-export const toBase64 = file => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = error => reject(error);
-});
+export function toBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+    });
+}
 
-export const resizeImage = (file, maxWidth, maxHeight) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
+export function resizeImage(file, maxWidth, maxHeight) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
 
-            if (width > height) {
-                if (width > maxWidth) {
-                    height *= maxWidth / width;
-                    width = maxWidth;
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height *= maxWidth / width;
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width *= maxHeight / height;
+                        height = maxHeight;
+                    }
                 }
-            } else {
-                if (height > maxHeight) {
-                    width *= maxHeight / height;
-                    height = maxHeight;
-                }
-            }
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.8)); // Use JPEG for smaller size
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', 0.8)); // Use JPEG for smaller size
+            };
+            img.onerror = (error) => reject(error);
         };
-        img.onerror = (error) => reject(error);
-    };
-    reader.onerror = (error) => reject(error);
-});
+        reader.onerror = (error) => reject(error);
+    });
+}
 
-export const encodeTextInImage = (imageData, text) => {
+export function encodeTextInImage(imageData, text) {
     const data = imageData.data;
     const textBytes = new TextEncoder().encode(text);
     const textLength = textBytes.length;
@@ -65,9 +69,9 @@ export const encodeTextInImage = (imageData, text) => {
         data[(headerSizeInPixels + i) * 4 + 3] = textBytes[i];
     }
     return imageData;
-};
+}
 
-export const decodeTextFromImage = (imageData) => {
+export function decodeTextFromImage(imageData) {
     const data = imageData.data;
     const headerSizeInPixels = 8;
 
@@ -91,9 +95,9 @@ export const decodeTextFromImage = (imageData) => {
     } catch (e) {
         return null;
     }
-};
+}
 
-export const handleSaveCharacterToImage = async (setState, characterData, language, encodeTextInImage) => {
+export async function handleSaveCharacterToImage(setState, characterData, language, encodeTextInImage) {
     if (!characterData.name) {
         showInfoModal(setState, language.modal.characterCardNoNameError.title, language.modal.characterCardNoNameError.message);
         return;
@@ -129,9 +133,9 @@ export const handleSaveCharacterToImage = async (setState, characterData, langua
     };
     image.onerror = () => showInfoModal(setState, language.modal.avatarImageLoadError.title, language.modal.avatarImageLoadError.message);
     image.src = currentAvatar;
-};
+}
 
-export const loadCharacterFromImage = async (setState, editingCharacter, language, decodeTextFromImage, file) => {
+export async function loadCharacterFromImage(setState, editingCharacter, language, decodeTextFromImage, file) {
     const reader = new FileReader();
     reader.onload = (e) => {
         const imageSrc = e.target.result;
@@ -167,4 +171,4 @@ export const loadCharacterFromImage = async (setState, editingCharacter, languag
         image.src = imageSrc;
     };
     reader.readAsDataURL(file);
-};
+}
