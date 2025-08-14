@@ -255,7 +255,7 @@ class PersonaChatApp {
                     thinkingTime: document.getElementById('character-thinkingTime').value,
                     reactivity: document.getElementById('character-reactivity').value,
                     tone: document.getElementById('character-tone').value,
-                    source: 'PersonaChatAppCharacterCard',
+                    source: SourceTypes.CHARACTER_CARD,
                     memories: memories,
                     proactiveEnabled: proactiveEnabled,
                 };

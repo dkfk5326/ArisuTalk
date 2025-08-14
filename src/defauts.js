@@ -28,3 +28,7 @@ export const defaultCharacters = [
     }
 ]
 export const imagePlaceholder = "https://placehold.co/200x200/FF0000/FFFFFF?text=Image+Not+Found";
+
+export const SourceTypes = {
+    CHARACTER_CARD: 'PersonaChatAppCharacterCard',
+};

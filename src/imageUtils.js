@@ -197,7 +197,7 @@ export async function loadCharacterFromImage(setState, editingCharacter, languag
                 const jsonString = decodeTextFromImage(imageData);
                 if (jsonString) {
                     const data = JSON.parse(jsonString);
-                    if (data.source === 'PersonaChatAppCharacterCard') {
+                    if (data.source === SourceTypes.CHARACTER_CARD) {
                         setState({
                             editingCharacter: { ...editingCharacter, ...data, avatar: imageSrc }
                         });
