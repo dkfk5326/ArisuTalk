@@ -2,9 +2,9 @@ import { language } from "./language.js";
 import { defaultPrompts, defaultCharacters } from "./defauts.js";
 
 // --- APP INITIALIZATION ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     window.personaApp = new PersonaChatApp();
-    window.personaApp.init();
+    await window.personaApp.init();
 });
 
 class PersonaChatApp {
@@ -13,7 +13,6 @@ class PersonaChatApp {
         this.defaultPrompts = defaultPrompts;
 
         // --- STATE MANAGEMENT ---
-        const loadedSettings = this.loadFromLocalStorage('personaChat_settings_v16', {});
         this.state = {
             settings: {
                 apiKey: '',
@@ -26,16 +25,18 @@ class PersonaChatApp {
                 randomMessageFrequencyMin: 10,
                 randomMessageFrequencyMax: 120,
                 fontScale: 1.0,
-                ...loadedSettings,
                 prompts: {
-                    main: { ...this.defaultPrompts.main, ...(loadedSettings.prompts?.main || {}) },
-                    profile_creation: loadedSettings.prompts?.profile_creation || this.defaultPrompts.profile_creation
+                    main: { ...this.defaultPrompts.main },
+                    profile_creation: this.defaultPrompts.profile_creation
                 }
             },
-            characters: this.loadFromLocalStorage('personaChat_characters_v16', defaultCharacters),
-            messages: this.loadFromLocalStorage('personaChat_messages_v16', {}),
-            unreadCounts: this.loadFromLocalStorage('personaChat_unreadCounts_v16', {}),
-            selectedChatId: null,
+            characters: defaultCharacters, // 비동기 로딩으로 변경
+            chatRooms: {}, // 비동기 로딩으로 변경
+            messages: {}, // 비동기 로딩으로 변경
+            unreadCounts: {}, // 비동기 로딩으로 변경
+            userStickers: [], // 비동기 로딩으로 변경
+            selectedChatId: null, // 이제 chatRoomId를 의미
+            expandedCharacterId: null, // 채팅방 목록이 펼쳐진 캐릭터
             isWaitingForResponse: false,
             typingCharacterId: null,
             sidebarCollapsed: window.innerWidth < 768,
@@ -48,6 +49,10 @@ class PersonaChatApp {
             modal: { isOpen: false, title: '', message: '', onConfirm: null },
             showInputOptions: false,
             imageToSend: null,
+            stickerSelectionMode: false,
+            selectedStickerIndices: [],
+            showUserStickerPanel: false,
+            expandedStickers: new Set(), // 확장된 스티커들의 ID 집합
         };
         this.messagesEndRef = null;
         this.proactiveInterval = null;
@@ -55,12 +60,19 @@ class PersonaChatApp {
     }
 
     // --- CORE METHODS ---
-    init() {
+    async init() {
         this.applyFontScale();
         this.addKeyboardListeners();
+        
+        // IndexedDB에서 데이터 로드
+        await this.loadAllData();
+        
+        // 기존 데이터를 새로운 구조로 마이그레이션
+        await this.migrateChatData();
+        
         this.render();
         this.addEventListeners();
-        const initialChatId = this.state.characters.length > 0 ? this.state.characters[0].id : null;
+        const initialChatId = this.getFirstAvailableChatRoom();
         if (this.state.characters.length > 0 && !this.state.selectedChatId) {
             this.setState({ selectedChatId: initialChatId });
         } else {
@@ -70,6 +82,41 @@ class PersonaChatApp {
 
         if (this.state.settings.randomFirstMessageEnabled) {
             this.scheduleMultipleRandomChats();
+        }
+    }
+
+    async loadAllData() {
+        try {
+            // 모든 데이터를 병렬로 로드
+            const [settings, characters, chatRooms, messages, unreadCounts, userStickers] = await Promise.all([
+                this.loadFromLocalStorage('personaChat_settings_v16', {}),
+                this.loadFromLocalStorage('personaChat_characters_v16', defaultCharacters),
+                this.loadFromLocalStorage('personaChat_chatRooms_v16', {}),
+                this.loadFromLocalStorage('personaChat_messages_v16', {}),
+                this.loadFromLocalStorage('personaChat_unreadCounts_v16', {}),
+                this.loadFromLocalStorage('personaChat_userStickers_v16', [])
+            ]);
+
+            // 설정 업데이트
+            this.state.settings = {
+                ...this.state.settings,
+                ...settings,
+                prompts: {
+                    main: { ...this.defaultPrompts.main, ...(settings.prompts?.main || {}) },
+                    profile_creation: settings.prompts?.profile_creation || this.defaultPrompts.profile_creation
+                }
+            };
+
+            // 다른 데이터 업데이트
+            this.state.characters = characters;
+            this.state.chatRooms = chatRooms;
+            this.state.messages = messages;
+            this.state.unreadCounts = unreadCounts;
+            this.state.userStickers = userStickers;
+
+        } catch (error) {
+            console.error('데이터 로드 실패:', error);
+            // 실패시 기본값 유지
         }
     }
 
@@ -85,14 +132,22 @@ class PersonaChatApp {
                 this.applyFontScale();
             }
         }
-        if (JSON.stringify(oldState.characters) !== JSON.stringify(this.state.characters)) {
+        // 캐릭터 데이터 변경 체크 (큰 데이터이므로 직접 비교 대신 플래그 사용)
+        if (this.shouldSaveCharacters || oldState.characters !== this.state.characters) {
             this.saveToLocalStorage('personaChat_characters_v16', this.state.characters);
+            this.shouldSaveCharacters = false;
+        }
+        if (JSON.stringify(oldState.chatRooms) !== JSON.stringify(this.state.chatRooms)) {
+            this.saveToLocalStorage('personaChat_chatRooms_v16', this.state.chatRooms);
         }
         if (JSON.stringify(oldState.messages) !== JSON.stringify(this.state.messages)) {
             this.saveToLocalStorage('personaChat_messages_v16', this.state.messages);
         }
         if (JSON.stringify(oldState.unreadCounts) !== JSON.stringify(this.state.unreadCounts)) {
             this.saveToLocalStorage('personaChat_unreadCounts_v16', this.state.unreadCounts);
+        }
+        if (JSON.stringify(oldState.userStickers) !== JSON.stringify(this.state.userStickers)) {
+            this.saveToLocalStorage('personaChat_userStickers_v16', this.state.userStickers);
         }
     }
 
@@ -104,10 +159,12 @@ class PersonaChatApp {
     updateUI(oldState, newState) {
         if (oldState.sidebarCollapsed !== newState.sidebarCollapsed ||
             oldState.searchQuery !== newState.searchQuery ||
+            oldState.expandedCharacterId !== newState.expandedCharacterId ||
             JSON.stringify(oldState.characters) !== JSON.stringify(newState.characters) ||
             oldState.selectedChatId !== newState.selectedChatId ||
             JSON.stringify(oldState.unreadCounts) !== JSON.stringify(newState.unreadCounts) ||
-            JSON.stringify(oldState.messages) !== JSON.stringify(newState.messages)
+            JSON.stringify(oldState.messages) !== JSON.stringify(newState.messages) ||
+            JSON.stringify(oldState.chatRooms) !== JSON.stringify(newState.chatRooms)
         ) {
             this.renderSidebar();
         }
@@ -119,7 +176,10 @@ class PersonaChatApp {
             oldState.isWaitingForResponse !== newState.isWaitingForResponse ||
             oldState.sidebarCollapsed !== newState.sidebarCollapsed ||
             oldState.showInputOptions !== newState.showInputOptions ||
-            oldState.imageToSend !== newState.imageToSend
+            oldState.imageToSend !== newState.imageToSend ||
+            oldState.showUserStickerPanel !== newState.showUserStickerPanel ||
+            JSON.stringify(oldState.userStickers) !== JSON.stringify(newState.userStickers) ||
+            JSON.stringify([...oldState.expandedStickers]) !== JSON.stringify([...newState.expandedStickers])
         ) {
             this.renderMainChat();
         }
@@ -139,9 +199,406 @@ class PersonaChatApp {
         this.scrollToBottom();
     }
 
+    // --- CHAT ROOM MANAGEMENT ---
+    async migrateChatData() {
+        // 마이그레이션 완료 플래그 확인
+        const migrationCompleted = await this.loadFromLocalStorage('personaChat_migration_v16', false);
+        if (migrationCompleted) {
+            return;
+        }
+        
+        const oldMessages = { ...this.state.messages };
+        const newChatRooms = { ...this.state.chatRooms };
+        const newMessages = { ...this.state.messages };
+        
+        this.state.characters.forEach(character => {
+            const characterId = character.id;
+            const oldMessagesForChar = oldMessages[characterId];
+            
+            // 이미 채팅방이 있는 캐릭터는 건너뛰기
+            if (newChatRooms[characterId] && newChatRooms[characterId].length > 0) {
+                return;
+            }
+            
+            // 기존 채팅방 구조가 있는지 확인 (채팅방 ID는 문자열 형태)
+            const isOldStructure = oldMessagesForChar && Array.isArray(oldMessagesForChar);
+            
+            if (isOldStructure && oldMessagesForChar.length > 0) {
+                // 기존 메시지가 있으면 기본 채팅방으로 마이그레이션
+                const defaultChatRoomId = `${characterId}_default_${Date.now()}`;
+                const defaultChatRoom = {
+                    id: defaultChatRoomId,
+                    characterId: characterId,
+                    name: '기본 채팅',
+                    createdAt: Date.now(),
+                    lastActivity: Date.now()
+                };
+                
+                newChatRooms[characterId] = [defaultChatRoom];
+                newMessages[defaultChatRoomId] = oldMessagesForChar;
+                // 기존 구조의 메시지는 삭제하지 않고 유지 (호환성)
+            } else {
+                // 메시지가 없으면 빈 배열
+                newChatRooms[characterId] = [];
+            }
+        });
+        
+        // setState를 사용하여 상태 업데이트
+        this.setState({
+            chatRooms: newChatRooms,
+            messages: newMessages
+        });
+        
+        // 마이그레이션 완료 플래그 저장
+        this.saveToLocalStorage('personaChat_migration_v16', true);
+    }
+
+    getFirstAvailableChatRoom() {
+        for (const character of this.state.characters) {
+            const chatRooms = this.state.chatRooms[character.id] || [];
+            if (chatRooms.length > 0) {
+                return chatRooms[0].id;
+            }
+        }
+        return null;
+    }
+
+    createNewChatRoom(characterId, chatName = '새 채팅') {
+        const newChatRoomId = `${characterId}_${Date.now()}_${Math.random()}`;
+        const newChatRoom = {
+            id: newChatRoomId,
+            characterId: characterId,
+            name: chatName,
+            createdAt: Date.now(),
+            lastActivity: Date.now()
+        };
+        
+        // 기존 채팅방 목록 복사 후 새 채팅방 추가
+        const characterChatRooms = [...(this.state.chatRooms[characterId] || [])];
+        characterChatRooms.unshift(newChatRoom); // 맨 앞에 추가
+        
+        // 새로운 chatRooms 객체 생성
+        const newChatRooms = { ...this.state.chatRooms };
+        newChatRooms[characterId] = characterChatRooms;
+        
+        // 새로운 messages 객체 생성
+        const newMessages = { ...this.state.messages };
+        newMessages[newChatRoomId] = [];
+        
+        // setState를 사용하여 상태 업데이트
+        this.setState({
+            chatRooms: newChatRooms,
+            messages: newMessages
+        });
+        
+        return newChatRoomId;
+    }
+
+    toggleCharacterExpansion(characterId) {
+        // ID 타입을 숫자로 변환하여 비교
+        const numericCharacterId = parseInt(characterId);
+        const newExpandedId = this.state.expandedCharacterId === numericCharacterId ? null : numericCharacterId;
+        this.setState({ expandedCharacterId: newExpandedId });
+    }
+
+    createNewChatRoomForCharacter(characterId) {
+        const numericCharacterId = parseInt(characterId);
+        const newChatRoomId = this.createNewChatRoom(numericCharacterId);
+        this.selectChatRoom(newChatRoomId);
+        this.setState({ expandedCharacterId: numericCharacterId }); // 자동으로 펼쳐서 새 채팅방 보이기
+    }
+
+    selectChatRoom(chatRoomId) {
+        // 읽음 처리
+        const newUnreadCounts = { ...this.state.unreadCounts };
+        delete newUnreadCounts[chatRoomId];
+        
+        this.setState({
+            selectedChatId: chatRoomId,
+            unreadCounts: newUnreadCounts,
+            editingMessageId: null,
+            sidebarCollapsed: window.innerWidth < 768 ? true : this.state.sidebarCollapsed
+        });
+    }
+
+    editCharacter(characterId) {
+        const numericCharacterId = parseInt(characterId);
+        const character = this.state.characters.find(c => c.id === numericCharacterId);
+        if (character) {
+            this.openEditCharacterModal(character);
+        }
+    }
+
+    deleteCharacter(characterId) {
+        const numericCharacterId = parseInt(characterId);
+        this.handleDeleteCharacter(numericCharacterId);
+    }
+
+    getCurrentChatRoom() {
+        if (!this.state.selectedChatId) return null;
+        
+        for (const characterId in this.state.chatRooms) {
+            const chatRooms = this.state.chatRooms[characterId];
+            const chatRoom = chatRooms.find(room => room.id === this.state.selectedChatId);
+            if (chatRoom) return chatRoom;
+        }
+        return null;
+    }
+
+    deleteChatRoom(chatRoomId) {
+        const chatRoom = this.getChatRoomById(chatRoomId);
+        if (!chatRoom) return;
+
+        this.showConfirmModal(
+            '채팅방 삭제',
+            '이 채팅방과 모든 메시지가 삭제됩니다. 계속하시겠습니까?',
+            () => {
+                const newChatRooms = { ...this.state.chatRooms };
+                const newMessages = { ...this.state.messages };
+                const newUnreadCounts = { ...this.state.unreadCounts };
+
+                // 채팅방 목록에서 제거
+                newChatRooms[chatRoom.characterId] = newChatRooms[chatRoom.characterId].filter(
+                    room => room.id !== chatRoomId
+                );
+
+                // 메시지 삭제
+                delete newMessages[chatRoomId];
+                delete newUnreadCounts[chatRoomId];
+
+                // 현재 선택된 채팅방이라면 다른 채팅방으로 변경
+                let newSelectedChatId = this.state.selectedChatId;
+                if (this.state.selectedChatId === chatRoomId) {
+                    newSelectedChatId = this.getFirstAvailableChatRoom();
+                }
+
+                this.setState({
+                    chatRooms: newChatRooms,
+                    messages: newMessages,
+                    unreadCounts: newUnreadCounts,
+                    selectedChatId: newSelectedChatId
+                });
+            }
+        );
+    }
+
+    getChatRoomById(chatRoomId) {
+        for (const characterId in this.state.chatRooms) {
+            const chatRoom = this.state.chatRooms[characterId].find(room => room.id === chatRoomId);
+            if (chatRoom) return chatRoom;
+        }
+        return null;
+    }
+
+    // --- USER STICKER MANAGEMENT ---
+    toggleUserStickerPanel() {
+        this.setState({ showUserStickerPanel: !this.state.showUserStickerPanel });
+    }
+
+    toggleStickerSize(messageId) {
+        const expandedStickers = new Set(this.state.expandedStickers);
+        if (expandedStickers.has(messageId)) {
+            expandedStickers.delete(messageId);
+        } else {
+            expandedStickers.add(messageId);
+        }
+        this.setState({ expandedStickers });
+    }
+
+    sendUserSticker(stickerName, stickerData, stickerType = 'image/png') {
+        // 스티커를 미리 설정하고 메시지 입력창으로 이동
+        this.setState({ 
+            showUserStickerPanel: false,
+            stickerToSend: {
+                stickerName,
+                data: stickerData,
+                type: stickerType
+            }
+        });
+        
+        // 메시지 입력창에 포커스
+        const messageInput = document.getElementById('new-message-input');
+        if (messageInput) {
+            messageInput.focus();
+        }
+    }
+
+    handleSendMessageWithSticker() {
+        const messageInput = document.getElementById('new-message-input');
+        const content = messageInput ? messageInput.value : '';
+        const hasImage = !!this.state.imageToSend;
+        const hasStickerToSend = !!this.state.stickerToSend;
+        
+        if (hasStickerToSend) {
+            // 스티커와 메시지를 함께 전송
+            const messageContent = content.trim(); // 실제 텍스트 메시지
+            
+            this.handleSendMessage(messageContent, 'sticker', {
+                stickerName: this.state.stickerToSend.stickerName,
+                data: this.state.stickerToSend.data,
+                type: this.state.stickerToSend.type,
+                hasText: messageContent.length > 0,
+                textContent: messageContent
+            });
+            
+            // 스티커 상태 즉시 초기화
+            this.state.stickerToSend = null;
+            this.state.showInputOptions = false;
+            
+            // 메시지 입력창 초기화
+            if (messageInput) {
+                messageInput.value = '';
+                messageInput.style.height = 'auto';
+            }
+            
+            // UI 즉시 업데이트
+            this.renderMainChat();
+        } else {
+            // 일반 메시지 또는 이미지 전송
+            this.handleSendMessage(content, hasImage ? 'image' : 'text');
+        }
+    }
+
+    addUserSticker(name, data) {
+        this.addUserStickerWithType(name, data, 'image/png');
+    }
+
+    addUserStickerWithType(name, data, type) {
+        const newSticker = {
+            id: Date.now(),
+            name: name,
+            data: data,
+            type: type,
+            createdAt: Date.now()
+        };
+        const newStickers = [...this.state.userStickers, newSticker];
+        this.setState({ userStickers: newStickers });
+    }
+
+    deleteUserSticker(stickerId) {
+        const newStickers = this.state.userStickers.filter(s => s.id !== stickerId);
+        this.setState({ userStickers: newStickers });
+    }
+
+    editUserStickerName(stickerId) {
+        const sticker = this.state.userStickers.find(s => s.id === stickerId);
+        if (!sticker) return;
+
+        const newName = prompt('스티커 이름을 입력하세요:', sticker.name);
+        if (newName !== null && newName.trim() !== '') {
+            const newStickers = this.state.userStickers.map(s => 
+                s.id === stickerId ? { ...s, name: newName.trim() } : s
+            );
+            this.setState({ userStickers: newStickers });
+        }
+    }
+
+    calculateUserStickerSize() {
+        return this.state.userStickers.reduce((total, sticker) => {
+            if (sticker.data) {
+                // Base64 데이터 크기 계산 (실제 크기의 약 133%)
+                const base64Length = sticker.data.split(',')[1]?.length || 0;
+                return total + (base64Length * 0.75); // Base64를 바이트로 변환
+            }
+            return total;
+        }, 0);
+    }
+
+    async handleUserStickerFileSelect(e) {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+
+        const stickerLimit = 100 * 1024 * 1024; // 100MB
+        const currentSize = this.calculateUserStickerSize();
+
+        for (const file of files) {
+            // 지원되는 파일 타입 체크
+            const allowedTypes = [
+                'image/jpeg', 'image/jpg', 'image/gif', 'image/png', 
+                'image/bmp', 'image/webp', 'video/webm', 'video/mp4', 'audio/mpeg', 'audio/mp3'
+            ];
+            if (!allowedTypes.includes(file.type)) {
+                alert(`${file.name}은(는) 지원하지 않는 파일 형식입니다. 지원 형식: jpg, gif, png, bmp, webp, webm, mp4, mp3`);
+                continue;
+            }
+
+            if (file.size > 30 * 1024 * 1024) { // 30MB 제한
+                alert(`${file.name}은(는) 파일 크기가 너무 큽니다. (최대 30MB)`);
+                continue;
+            }
+
+            try {
+                let dataUrl;
+                
+                // 이미지 파일인 경우 압축 처리
+                if (file.type.startsWith('image/')) {
+                    dataUrl = await this.compressImageForSticker(file, 1024, 1024, 0.85);
+                } else {
+                    // 오디오/비디오 파일은 그대로 처리
+                    dataUrl = await this.toBase64(file);
+                }
+
+                const stickerName = file.name.split('.')[0]; // 확장자 제거
+                this.addUserStickerWithType(stickerName, dataUrl, file.type);
+            } catch (error) {
+                console.error('파일 처리 오류:', error);
+                alert('파일을 처리하는 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 파일 입력 초기화
+        e.target.value = '';
+    }
+
+    async compressImage(file, quality = 0.8) {
+        return new Promise((resolve, reject) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+
+            img.onload = () => {
+                // 최대 크기 제한 (예: 1024px)
+                const maxSize = 1024;
+                let { width, height } = img;
+
+                if (width > maxSize || height > maxSize) {
+                    if (width > height) {
+                        height = (height * maxSize) / width;
+                        width = maxSize;
+                    } else {
+                        width = (width * maxSize) / height;
+                        height = maxSize;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // WebP 지원 확인
+                const format = canvas.toDataURL('image/webp', quality).indexOf('data:image/webp') === 0 ? 'image/webp' : 'image/jpeg';
+                const compressedDataUrl = canvas.toDataURL(format, quality);
+                resolve(compressedDataUrl);
+            };
+
+            img.onerror = () => reject(new Error('이미지 로드 실패'));
+            img.src = URL.createObjectURL(file);
+        });
+    }
 
     // --- LOCAL STORAGE HELPERS ---
-    loadFromLocalStorage(key, defaultValue) {
+    async loadFromLocalStorage(key, defaultValue) {
+        try {
+            // IndexedDB에서 먼저 시도
+            const value = await this.loadFromIndexedDB(key);
+            if (value !== null) {
+                return value;
+            }
+        } catch (error) {
+            console.warn(`Error reading from IndexedDB key "${key}":`, error);
+        }
+
+        // IndexedDB에서 데이터가 없으면 localStorage에서 fallback
         try {
             const item = window.localStorage.getItem(key);
             return item ? JSON.parse(item) : defaultValue;
@@ -151,18 +608,78 @@ class PersonaChatApp {
         }
     }
 
-    saveToLocalStorage(key, value) {
+    async loadFromIndexedDB(key) {
+        return new Promise((resolve, reject) => {
+            const dbName = 'PersonaChatDB';
+            const request = indexedDB.open(dbName, 1);
+            
+            request.onerror = () => reject(request.error);
+            
+            request.onsuccess = () => {
+                const db = request.result;
+                const transaction = db.transaction(['data'], 'readonly');
+                const store = transaction.objectStore('data');
+                const getRequest = store.get(key);
+                
+                getRequest.onsuccess = () => {
+                    const result = getRequest.result;
+                    resolve(result ? result.value : null);
+                };
+                
+                getRequest.onerror = () => reject(getRequest.error);
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('data')) {
+                    db.createObjectStore('data', { keyPath: 'key' });
+                }
+            };
+        });
+    }
+
+    async saveToLocalStorage(key, value) {
         try {
-            const stringifiedValue = JSON.stringify(value);
-            window.localStorage.setItem(key, stringifiedValue);
+            // IndexedDB 사용으로 전환 (더 큰 저장 공간)
+            await this.saveToIndexedDB(key, value);
         } catch (error) {
-            console.error(`Error saving to localStorage key "${key}":`, error);
-            if (error.name === 'QuotaExceededError') {
-                this.showInfoModal(language.modal.noSpaceError.title, language.modal.noSpaceError.message);
-            } else {
-                this.showInfoModal(language.modal.localStorageSaveError.title, language.modal.localStorageSaveError.message);
+            console.error(`Error saving to IndexedDB key "${key}":`, error);
+            // IndexedDB 실패시 localStorage로 fallback
+            try {
+                const stringifiedValue = JSON.stringify(value);
+                window.localStorage.setItem(key, stringifiedValue);
+            } catch (localStorageError) {
+                console.error("localStorage fallback also failed:", localStorageError);
+                alert("데이터 저장에 실패했습니다. 브라우저 캐시를 정리해주세요.");
             }
         }
+    }
+
+    async saveToIndexedDB(key, value) {
+        return new Promise((resolve, reject) => {
+            const dbName = 'PersonaChatDB';
+            const request = indexedDB.open(dbName, 1);
+            
+            request.onerror = () => reject(request.error);
+            
+            request.onsuccess = () => {
+                const db = request.result;
+                const transaction = db.transaction(['data'], 'readwrite');
+                const store = transaction.objectStore('data');
+                
+                store.put({ key, value });
+                
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = () => reject(transaction.error);
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('data')) {
+                    db.createObjectStore('data', { keyPath: 'key' });
+                }
+            };
+        });
     }
 
     // --- EVENT LISTENERS ---
@@ -192,32 +709,8 @@ class PersonaChatApp {
                 this.handleDetailsToggle(e);
             }
 
-            const chatItem = e.target.closest('.character-item');
-            if (chatItem) {
-                const chatId = parseFloat(chatItem.dataset.id); // FIX: Use parseFloat for potentially float IDs
-                const newUnreadCounts = { ...this.state.unreadCounts };
-                if (newUnreadCounts[chatId]) {
-                    delete newUnreadCounts[chatId];
-                }
-                this.setState({
-                    selectedChatId: chatId,
-                    editingMessageId: null,
-                    unreadCounts: newUnreadCounts,
-                    sidebarCollapsed: window.innerWidth < 768 ? true : this.state.sidebarCollapsed
-                });
-            }
 
-            const editCharButton = e.target.closest('.edit-character-btn');
-            if (editCharButton) {
-                e.stopPropagation();
-                const character = this.state.characters.find(c => c.id === parseFloat(editCharButton.dataset.id)); // FIX: Use parseFloat
-                this.openEditCharacterModal(character);
-            }
-            const deleteCharButton = e.target.closest('.delete-character-btn');
-            if (deleteCharButton) {
-                e.stopPropagation();
-                this.handleDeleteCharacter(parseFloat(deleteCharButton.dataset.id)); // FIX: Use parseFloat
-            }
+            // 이제 캐릭터 수정/삭제는 인라인 onclick으로 처리됨
 
             if (e.target.closest('#open-input-options-btn')) {
                 this.setState({ showInputOptions: !this.state.showInputOptions });
@@ -255,9 +748,28 @@ class PersonaChatApp {
             if (cancelEditButton) this.setState({ editingMessageId: null });
 
             if (e.target.closest('#add-memory-btn')) this.addMemoryField();
+            if (e.target.closest('#add-sticker-btn')) document.getElementById('sticker-input').click();
+            if (e.target.closest('#toggle-sticker-selection')) {
+                console.log('Toggle sticker selection mode clicked');
+                this.toggleStickerSelectionMode();
+            }
+            if (e.target.closest('#select-all-stickers')) this.handleSelectAllStickers();
+            
+            // 사용자 스티커 관련 이벤트
+            if (e.target.closest('#add-user-sticker-btn')) document.getElementById('user-sticker-input').click();
+            if (e.target.closest('#delete-selected-stickers')) this.handleDeleteSelectedStickers();
             const deleteMemoryBtn = e.target.closest('.delete-memory-btn');
             if (deleteMemoryBtn) {
                 deleteMemoryBtn.closest('.memory-item').remove();
+            }
+            const deleteStickerBtn = e.target.closest('.delete-sticker-btn');
+            if (deleteStickerBtn) {
+                this.handleDeleteSticker(parseInt(deleteStickerBtn.dataset.index));
+            }
+            
+            const editStickerNameBtn = e.target.closest('.edit-sticker-name-btn');
+            if (editStickerNameBtn) {
+                this.handleEditStickerName(parseInt(editStickerNameBtn.dataset.index));
             }
 
             if (e.target.closest('#backup-data-btn')) this.handleBackup();
@@ -301,6 +813,12 @@ class PersonaChatApp {
             }
             if (e.target.id === 'card-input') {
                 this.handleAvatarChange(e, true);
+            }
+            if (e.target.id === 'sticker-input') {
+                this.handleStickerFileSelect(e);
+            }
+            if (e.target.id === 'user-sticker-input') {
+                this.handleUserStickerFileSelect(e);
             }
             if (e.target.id === 'settings-random-first-message-toggle') {
                 const optionsDiv = document.getElementById('random-chat-options');
@@ -391,9 +909,21 @@ class PersonaChatApp {
     }
 
     renderCharacterItem(char) {
-        const lastMessage = (this.state.messages[char.id] || []).slice(-1)[0];
-        const isSelected = this.state.selectedChatId === char.id;
-        const unreadCount = this.state.unreadCounts[char.id] || 0;
+        const chatRooms = this.state.chatRooms[char.id] || [];
+        const isExpanded = this.state.expandedCharacterId === parseInt(char.id);
+        
+        // 캐릭터의 모든 채팅방에서 가장 최근 메시지 찾기
+        let lastMessage = null;
+        let totalUnreadCount = 0;
+        
+        chatRooms.forEach(chatRoom => {
+            const messages = this.state.messages[chatRoom.id] || [];
+            const chatRoomLastMessage = messages.slice(-1)[0];
+            if (chatRoomLastMessage && (!lastMessage || chatRoomLastMessage.id > lastMessage.id)) {
+                lastMessage = chatRoomLastMessage;
+            }
+            totalUnreadCount += this.state.unreadCounts[chatRoom.id] || 0;
+        });
 
         let lastMessageContent = language.chat.startNewChat;
         if (lastMessage) {
@@ -405,26 +935,83 @@ class PersonaChatApp {
         }
 
         return `
-                <div data-id="${char.id}" class="character-item group p-3 md:p-4 rounded-xl cursor-pointer transition-all duration-200 relative ${isSelected ? 'bg-gray-800 border border-gray-700' : 'hover:bg-gray-800/50'}">
-                    <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-1">
-                        <button data-id="${char.id}" class="edit-character-btn p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 hover:text-white transition-colors"><i data-lucide="edit-3" class="w-3 h-3 pointer-events-none"></i></button>
-                        <button data-id="${char.id}" class="delete-character-btn p-1 bg-gray-700 hover:bg-red-600 rounded text-gray-300 hover:text-white transition-colors"><i data-lucide="trash-2" class="w-3 h-3 pointer-events-none"></i></button>
+            <div class="character-group">
+                <!-- 캐릭터 헤더 -->
+                <div onclick="window.personaApp.toggleCharacterExpansion(${char.id})" class="character-header group p-3 md:p-4 rounded-xl cursor-pointer transition-all duration-200 relative hover:bg-gray-800/50">
+                    <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-1 z-10">
+                        <button onclick="window.personaApp.createNewChatRoomForCharacter(${char.id}); event.stopPropagation();" class="p-1 bg-gray-700 hover:bg-blue-600 rounded text-gray-300 hover:text-white transition-colors" title="새 채팅방">
+                            <i data-lucide="plus" class="w-3 h-3"></i>
+                        </button>
+                        <button onclick="window.personaApp.editCharacter(${char.id}); event.stopPropagation();" class="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 hover:text-white transition-colors" title="수정">
+                            <i data-lucide="edit-3" class="w-3 h-3"></i>
+                        </button>
+                        <button onclick="window.personaApp.deleteCharacter(${char.id}); event.stopPropagation();" class="p-1 bg-gray-700 hover:bg-red-600 rounded text-gray-300 hover:text-white transition-colors" title="삭제">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        </button>
                     </div>
-                    <div class="flex items-center space-x-3 md:space-x-4 pointer-events-none">
+                    <div class="flex items-center space-x-3 md:space-x-4">
                         ${this.renderAvatar(char, 'md')}
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center justify-between mb-1">
                                 <h3 class="font-semibold text-white text-sm truncate">${char.name}</h3>
                                 <div class="flex items-center gap-2">
-                                    ${unreadCount > 0 ? `<span class="bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full leading-none">${unreadCount}</span>` : ''}
+                                    ${totalUnreadCount > 0 ? `<span class="bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full leading-none">${totalUnreadCount}</span>` : ''}
                                     <span class="text-xs text-gray-500 shrink-0">${lastMessage?.time || ''}</span>
+                                    <i data-lucide="chevron-${isExpanded ? 'down' : 'right'}" class="w-4 h-4 text-gray-400"></i>
                                 </div>
                             </div>
                             <p class="text-xs md:text-sm truncate ${lastMessage?.isError ? 'text-red-400' : 'text-gray-400'}">${lastMessageContent}</p>
+                            <p class="text-xs text-gray-500 mt-1">${chatRooms.length}개 채팅방</p>
                         </div>
                     </div>
                 </div>
-            `;
+                
+                <!-- 채팅방 목록 -->
+                ${isExpanded ? `
+                    <div class="ml-6 space-y-1 pb-2">
+                        ${chatRooms.map(chatRoom => this.renderChatRoomItem(chatRoom)).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    renderChatRoomItem(chatRoom) {
+        const messages = this.state.messages[chatRoom.id] || [];
+        const lastMessage = messages.slice(-1)[0];
+        const isSelected = this.state.selectedChatId === chatRoom.id;
+        const unreadCount = this.state.unreadCounts[chatRoom.id] || 0;
+        
+        let lastMessageContent = '채팅을 시작해보세요';
+        if (lastMessage) {
+            if (lastMessage.type === 'image') {
+                lastMessageContent = '이미지를 보냈습니다';
+            } else if (lastMessage.type === 'sticker') {
+                lastMessageContent = '스티커를 보냈습니다';
+            } else {
+                lastMessageContent = lastMessage.content;
+            }
+        }
+        
+        return `
+            <div class="chat-room-item group p-2 rounded-lg cursor-pointer transition-all duration-200 ${isSelected ? 'bg-blue-600' : 'hover:bg-gray-700'} relative">
+                <div onclick="window.personaApp.selectChatRoom('${chatRoom.id}')" class="flex items-center justify-between">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between mb-1">
+                            <h4 class="text-sm font-medium text-white truncate">${chatRoom.name}</h4>
+                            <div class="flex items-center gap-2">
+                                ${unreadCount > 0 ? `<span class="bg-red-500 text-white text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full leading-none">${unreadCount}</span>` : ''}
+                                <span class="text-xs text-gray-400 shrink-0">${lastMessage?.time || ''}</span>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-400 truncate">${lastMessageContent}</p>
+                    </div>
+                </div>
+                <button onclick="window.personaApp.deleteChatRoom('${chatRoom.id}'); event.stopPropagation();" class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 bg-red-600 hover:bg-red-700 rounded text-white" title="채팅방 삭제">
+                    <i data-lucide="trash-2" class="w-3 h-3"></i>
+                </button>
+            </div>
+        `;
     }
 
     renderAvatar(character, size = 'md') {
@@ -447,9 +1034,11 @@ class PersonaChatApp {
 
     renderMainChat() {
         const mainChat = document.getElementById('main-chat');
-        const selectedChat = this.state.characters.find(c => c.id === this.state.selectedChatId);
+        const selectedChatRoom = this.getCurrentChatRoom();
+        const selectedChat = selectedChatRoom ? this.state.characters.find(c => c.id === selectedChatRoom.characterId) : null;
 
-        if (selectedChat) {
+
+        if (selectedChatRoom && selectedChat) {
             mainChat.innerHTML = `
                     <header class="p-4 bg-gray-900/80 border-b border-gray-800 glass-effect flex items-center justify-between z-10">
                         <div class="flex items-center space-x-2 md:space-x-4">
@@ -459,7 +1048,7 @@ class PersonaChatApp {
                             ${this.renderAvatar(selectedChat, 'sm')}
                             <div>
                                 <h2 class="font-semibold text-white text-base md:text-lg">${selectedChat.name}</h2>
-                                <p class="text-xs md:text-sm text-gray-400 flex items-center"><i data-lucide="users" class="w-3 h-3 mr-1.5"></i>대화를 나눠보세요</p>
+                                <p class="text-xs md:text-sm text-gray-400 flex items-center"><i data-lucide="message-circle" class="w-3 h-3 mr-1.5"></i>${selectedChatRoom.name}</p>
                             </div>
                         </div>
                         <div class="flex items-center space-x-1 md:space-x-2">
@@ -529,17 +1118,112 @@ class PersonaChatApp {
                         </button>
                         ` : ''}
                         <div class="flex-1 relative">
-                            <textarea id="new-message-input" placeholder="${hasImage ? '캡션 추가...' : '메시지를 입력하세요...'}" class="w-full pl-4 pr-12 py-3 bg-gray-800 text-white rounded-2xl border border-gray-700 resize-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all duration-200 text-sm placeholder-gray-500" rows="1" style="min-height: 48px; max-height: 120px;" ${isWaitingForResponse ? 'disabled' : ''}></textarea>
-                            <button id="send-message-btn" 
-                                onclick="window.personaApp.handleSendMessage(document.getElementById('new-message-input').value, '${hasImage ? 'image' : 'text'}')" 
-                                class="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                                ${isWaitingForResponse || !hasImage ? 'disabled' : ''}>
-                                <i data-lucide="send" class="w-4 h-4"></i>
-                            </button>
+                            ${this.state.stickerToSend ? `
+                                <div class="mb-2 p-2 bg-gray-700 rounded-lg flex items-center gap-2 text-sm text-gray-300">
+                                    <img src="${this.state.stickerToSend.data}" alt="${this.state.stickerToSend.stickerName}" class="w-6 h-6 rounded object-cover">
+                                    <span>스티커: ${this.state.stickerToSend.stickerName}</span>
+                                    <button onclick="window.personaApp.setState({stickerToSend: null})" class="ml-auto text-gray-400 hover:text-white">
+                                        <i data-lucide="x" class="w-3 h-3"></i>
+                                    </button>
+                                </div>
+                            ` : ''}
+                            <textarea id="new-message-input" placeholder="${hasImage ? '캡션 추가...' : this.state.stickerToSend ? '스티커와 함께 보낼 메시지 (선택사항)...' : '메시지를 입력하세요...'}" class="w-full pl-4 pr-20 py-3 bg-gray-800 text-white rounded-2xl border border-gray-700 resize-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all duration-200 text-sm placeholder-gray-500" rows="1" style="min-height: 48px; max-height: 120px;" ${isWaitingForResponse ? 'disabled' : ''}></textarea>
+                            <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                                <button id="sticker-btn" 
+                                    onclick="window.personaApp.toggleUserStickerPanel()" 
+                                    class="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-full transition-all duration-200"
+                                    ${isWaitingForResponse ? 'disabled' : ''}>
+                                    <i data-lucide="smile" class="w-4 h-4"></i>
+                                </button>
+                                <button id="send-message-btn" 
+                                    onclick="window.personaApp.handleSendMessageWithSticker()" 
+                                    class="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                                    ${isWaitingForResponse ? 'disabled' : ''}>
+                                    <i data-lucide="send" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                            ${this.state.showUserStickerPanel ? this.renderUserStickerPanel() : ''}
                         </div>
                     </div>
                 </div>
             `;
+    }
+
+    renderUserStickerPanel() {
+        const userStickers = this.state.userStickers || [];
+        const currentSize = this.calculateUserStickerSize();
+        const stickerLimit = 100 * 1024 * 1024; // 100MB
+        
+        return `
+            <div class="absolute bottom-full left-0 mb-2 w-80 bg-gray-800 rounded-xl shadow-lg border border-gray-700 animate-fadeIn">
+                <div class="p-3 border-b border-gray-700 flex items-center justify-between">
+                    <h3 class="text-sm font-medium text-white">페르소나 스티커</h3>
+                    <div class="flex gap-2">
+                        <button id="add-user-sticker-btn" class="p-1 bg-blue-600 hover:bg-blue-700 text-white rounded" title="스티커 추가">
+                            <i data-lucide="plus" class="w-3 h-3"></i>
+                        </button>
+                        <button onclick="window.personaApp.toggleUserStickerPanel()" class="p-1 bg-gray-600 hover:bg-gray-500 text-white rounded" title="닫기">
+                            <i data-lucide="x" class="w-3 h-3"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-3">
+                    <div class="flex items-center justify-between text-xs text-gray-400 mb-3">
+                        <span>jpg, gif, png, bmp, webp 지원 (개당 최대 30MB)</span>
+                        <span>스티커 개수: ${userStickers.length}개</span>
+                    </div>
+                    <div class="flex items-center justify-between text-xs text-gray-500 mb-3">
+                        <span>총 용량: ${this.formatBytes(currentSize)}</span>
+                    </div>
+                    ${userStickers.length === 0 ? `
+                        <div class="text-center text-gray-400 py-8">
+                            <i data-lucide="smile" class="w-8 h-8 mx-auto mb-2"></i>
+                            <p class="text-sm">스티커를 추가해보세요</p>
+                            <button onclick="document.getElementById('add-user-sticker-btn').click()" class="mt-2 text-xs text-blue-400 hover:text-blue-300">스티커 추가하기</button>
+                        </div>
+                    ` : `
+                        <div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                            ${userStickers.map(sticker => {
+                                const isVideo = sticker.type && (sticker.type.startsWith('video/') || sticker.type === 'video/mp4' || sticker.type === 'video/webm');
+                                const isAudio = sticker.type && sticker.type.startsWith('audio/');
+                                
+                                let content = '';
+                                if (isAudio) {
+                                    content = `<div class="w-full h-full flex items-center justify-center bg-gray-600"><i data-lucide="music" class="w-6 h-6 text-gray-300"></i></div>`;
+                                } else if (isVideo) {
+                                    content = `<video class="w-full h-full object-cover" muted><source src="${sticker.data}" type="${sticker.type}"></video>`;
+                                } else {
+                                    content = `<img src="${sticker.data}" alt="${sticker.name}" class="w-full h-full object-cover">`;
+                                }
+                                
+                                return `
+                                <div class="relative group">
+                                    <button onclick="window.personaApp.sendUserSticker('${sticker.name}', '${sticker.data}', '${sticker.type || 'image/png'}')" 
+                                        class="w-full aspect-square bg-gray-700 rounded-lg overflow-hidden hover:bg-gray-600 transition-colors">
+                                        ${content}
+                                    </button>
+                                    <div class="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                        <button onclick="window.personaApp.editUserStickerName(${sticker.id}); event.stopPropagation();" 
+                                            class="w-5 h-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center text-xs" title="이름 변경">
+                                            <i data-lucide="edit-3" class="w-2 h-2"></i>
+                                        </button>
+                                        <button onclick="window.personaApp.deleteUserSticker(${sticker.id}); event.stopPropagation();" 
+                                            class="w-5 h-5 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center text-xs" title="삭제">
+                                            <i data-lucide="x" class="w-3 h-3"></i>
+                                        </button>
+                                    </div>
+                                    <div class="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate rounded-b-lg">
+                                        ${sticker.name}
+                                    </div>
+                                </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `}
+                </div>
+                <input type="file" accept="image/*,video/*,audio/*" id="user-sticker-input" class="hidden" multiple />
+            </div>
+        `;
     }
 
     renderMessages() {
@@ -603,14 +1287,107 @@ class PersonaChatApp {
             const showUnread = msg.isMe && lastUserMessage && msg.id === lastUserMessage.id && this.state.isWaitingForResponse && !this.state.typingCharacterId;
 
             let messageBodyHtml = '';
-            if (msg.type === 'sticker') { // Fallback for old sticker data
-                messageBodyHtml = `<div class="px-4 py-2 rounded-2xl text-sm md:text-base leading-relaxed bg-gray-700 text-gray-400 italic">[삭제된 스티커: ${msg.stickerName || msg.content}]</div>`;
+            if (msg.type === 'sticker') {
+                // 사용자 페르소나 스티커 처리 (msg.stickerData에 직접 저장됨)
+                let stickerData = msg.stickerData;
+                
+                // 캐릭터 스티커 처리 (기존 로직)
+                if (!stickerData) {
+                    const selectedChatRoom = this.getCurrentChatRoom();
+                    const character = selectedChatRoom ? this.state.characters.find(c => c.id === selectedChatRoom.characterId) : null;
+                    stickerData = character?.stickers?.find(s => {
+                        // ID로 찾기 (숫자 비교)
+                        if (s.id == msg.stickerId) return true;
+                        // 이름으로 찾기 (정확한 문자열 비교)
+                        if (s.name === msg.stickerId) return true;
+                        // 파일명에서 확장자 제거한 이름으로 찾기
+                        const baseFileName = s.name.replace(/\.[^/.]+$/, "");
+                        const searchFileName = String(msg.stickerId).replace(/\.[^/.]+$/, "");
+                        if (baseFileName === searchFileName) return true;
+                        return false;
+                    });
+                }
+                
+                if (stickerData) {
+                    const isVideo = stickerData.type && (stickerData.type.startsWith('video/') || stickerData.type === 'video/mp4' || stickerData.type === 'video/webm');
+                    const isAudio = stickerData.type && stickerData.type.startsWith('audio/');
+                    
+                    let stickerHtml = '';
+                    if (isAudio) {
+                        const audioSrc = stickerData.data || stickerData.dataUrl;
+                        const stickerName = stickerData.stickerName || stickerData.name || '오디오';
+                        stickerHtml = `
+                            <div class="bg-gray-700 p-3 rounded-2xl max-w-xs">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 bg-gray-600 rounded-full flex items-center justify-center">
+                                        <i data-lucide="music" class="w-6 h-6 text-gray-300"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm text-white font-medium">${stickerName}</div>
+                                        <audio controls class="mt-1 h-8">
+                                            <source src="${audioSrc}" type="${stickerData.type}">
+                                        </audio>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (isVideo) {
+                        const videoSrc = stickerData.data || stickerData.dataUrl;
+                        const isExpanded = this.state.expandedStickers.has(msg.id);
+                        const sizeClass = isExpanded ? 'max-w-4xl' : 'max-w-xs';
+                        const heightStyle = isExpanded ? 'max-height: 720px;' : 'max-height: 240px;';
+                        stickerHtml = `
+                            <div class="inline-block cursor-pointer transition-all duration-300" onclick="window.personaApp.toggleStickerSize(${msg.id})">
+                                <video class="${sizeClass} rounded-2xl" style="${heightStyle}" controls muted loop autoplay>
+                                    <source src="${videoSrc}" type="${stickerData.type}">
+                                </video>
+                            </div>
+                        `;
+                    } else {
+                        const imgSrc = stickerData.data || stickerData.dataUrl;
+                        const stickerName = stickerData.stickerName || stickerData.name || '스티커';
+                        const isExpanded = this.state.expandedStickers.has(msg.id);
+                        const sizeClass = isExpanded ? 'max-w-4xl' : 'max-w-xs';
+                        const heightStyle = isExpanded ? 'max-height: 720px;' : 'max-height: 240px;';
+                        stickerHtml = `<div class="inline-block cursor-pointer transition-all duration-300" onclick="window.personaApp.toggleStickerSize(${msg.id})"><img src="${imgSrc}" alt="${stickerName}" class="${sizeClass} rounded-2xl object-contain" style="${heightStyle}"></div>`;
+                    }
+                    
+                    // 텍스트와 스티커 함께 표시
+                    const hasTextMessage = (msg.hasText && msg.content && msg.content.trim()) || 
+                                          (msg.stickerData && msg.stickerData.hasText && msg.stickerData.textContent && msg.stickerData.textContent.trim()) ||
+                                          (msg.content && msg.content.trim() && !msg.content.includes('[스티커:'));
+                    
+                    if (hasTextMessage) {
+                        // 텍스트 내용 결정
+                        let textContent = '';
+                        if (msg.stickerData && msg.stickerData.textContent) {
+                            textContent = msg.stickerData.textContent;
+                        } else if (msg.content && !msg.content.includes('[스티커:')) {
+                            textContent = msg.content;
+                        }
+                        
+                        if (textContent.trim()) {
+                            const textHtml = `<div class="px-4 py-2 rounded-2xl text-sm md:text-base leading-relaxed ${msg.isMe ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-100'} mb-2"><div class="break-words">${textContent}</div></div>`;
+                            messageBodyHtml = `<div class="flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}">${textHtml}${stickerHtml}</div>`;
+                        } else {
+                            messageBodyHtml = stickerHtml;
+                        }
+                    } else {
+                        messageBodyHtml = stickerHtml;
+                    }
+                } else {
+                    messageBodyHtml = `<div class="px-4 py-2 rounded-2xl text-sm md:text-base leading-relaxed bg-gray-700 text-gray-400 italic">[삭제된 스티커: ${msg.stickerName || msg.content}]</div>`;
+                }
             } else if (msg.type === 'image') {
-                const character = this.state.characters.find(c => c.id === this.state.selectedChatId);
+                const selectedChatRoom = this.getCurrentChatRoom();
+                const character = selectedChatRoom ? this.state.characters.find(c => c.id === selectedChatRoom.characterId) : null;
                 const imageData = character?.media?.find(m => m.id === msg.imageId);
                 const imageUrl = imageData ? imageData.dataUrl : imagePlaceholder;
 
-                const imageTag = `<img src="${imageUrl}" class="max-w-xs max-h-80 rounded-lg object-cover cursor-pointer" onclick="window.open('${imageUrl}')">`;
+                const isExpanded = this.state.expandedStickers.has(msg.id);
+                const sizeClass = isExpanded ? 'max-w-4xl' : 'max-w-xs';
+                const heightStyle = isExpanded ? 'max-height: 720px;' : 'max-height: 320px;';
+                const imageTag = `<div class="inline-block cursor-pointer transition-all duration-300" onclick="window.personaApp.toggleStickerSize(${msg.id})"><img src="${imageUrl}" class="${sizeClass} rounded-lg object-cover" style="${heightStyle}"></div>`;
                 const captionTag = msg.content ? `<div class="mt-2 px-4 py-2 rounded-2xl text-sm md:text-base leading-relaxed inline-block ${msg.isMe ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-100'}"><div class="break-words">${msg.content}</div></div>` : '';
                 messageBodyHtml = `<div class="flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}">${imageTag}${captionTag}</div>`;
             } else {
@@ -841,6 +1618,7 @@ class PersonaChatApp {
             '## 메시지 작성 스타일 (Message Writing Style)': { key: 'message_writing', content: prompts.main.message_writing },
             '## 언어 (Language)': { key: 'language', content: prompts.main.language },
             '## 추가 지시사항 (Additional Instructions)': { key: 'additional_instructions', content: prompts.main.additional_instructions },
+            '## 스티커 사용법 (Sticker Usage)': { key: 'sticker_usage', content: prompts.main.sticker_usage },
         };
 
         return `
@@ -860,6 +1638,11 @@ class PersonaChatApp {
                                     </summary>
                                     <div class="content-wrapper">
                                         <div class="content-inner p-4 border-t border-gray-700">
+                                            <div class="flex items-center gap-2 mb-3">
+                                                <button onclick="window.personaApp.resetPromptToDefault('main', '${data.key}', '${title}')" class="py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs flex items-center gap-1">
+                                                    <i data-lucide="rotate-ccw" class="w-3 h-3"></i> 기본값으로 되돌리기
+                                                </button>
+                                            </div>
                                             <textarea id="prompt-main-${data.key}" class="w-full h-64 p-3 bg-gray-700 text-white rounded-lg text-sm font-mono">${data.content}</textarea>
                                         </div>
                                     </div>
@@ -874,6 +1657,11 @@ class PersonaChatApp {
                                 </summary>
                                 <div class="content-wrapper">
                                     <div class="content-inner p-4 border-t border-gray-700">
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <button onclick="window.personaApp.resetPromptToDefault('profile_creation', '', '# 캐릭터 생성 규칙 (Profile Creation Rules)')" class="py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs flex items-center gap-1">
+                                                <i data-lucide="rotate-ccw" class="w-3 h-3"></i> 기본값으로 되돌리기
+                                            </button>
+                                        </div>
                                         <textarea id="prompt-profile_creation" class="w-full h-64 p-3 bg-gray-700 text-white rounded-lg text-sm font-mono">${prompts.profile_creation}</textarea>
                                     </div>
                                 </div>
@@ -966,6 +1754,55 @@ class PersonaChatApp {
                                 <div class="content-wrapper">
                                     <div class="content-inner pt-6 space-y-6">
                                         
+                                        <!-- Sticker Section -->
+                                        <details class="group border-t border-gray-700 pt-2">
+                                            <summary class="flex items-center justify-between cursor-pointer list-none py-2">
+                                               <h4 class="text-sm font-medium text-gray-300">스티커</h4>
+                                               <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
+                                            </summary>
+                                            <div class="content-wrapper">
+                                                <div class="content-inner pt-4 space-y-4">
+                                                    <div class="flex items-center justify-between mb-3">
+                                                        <div class="flex items-center gap-2">
+                                                            <button id="add-sticker-btn" class="py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm flex flex-col items-center justify-center gap-1">
+                                                                <i data-lucide="plus" class="w-4 h-4"></i> 
+                                                                <span class="text-xs">스티커<br>추가</span>
+                                                            </button>
+                                                            <input type="file" accept="image/jpeg,image/jpg,image/gif,image/png,image/bmp,image/webp,video/webm,video/mp4,audio/mpeg,audio/mp3" id="sticker-input" class="hidden" multiple />
+                                                        </div>
+                                                        ${(editingCharacter?.stickers || []).length > 0 ? `
+                                                        <div class="flex items-center gap-2">
+                                                            <button id="toggle-sticker-selection" class="py-2 px-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm flex flex-col items-center gap-1" data-selection-mode="${this.state.stickerSelectionMode ? 'true' : 'false'}">
+                                                                <i data-lucide="check-square" class="w-4 h-4"></i> 
+                                                                <span class="toggle-text text-xs">${this.state.stickerSelectionMode ? '선택<br>해제' : '선택<br>모드'}</span>
+                                                            </button>
+                                                            ${this.state.stickerSelectionMode ? `
+                                                            <button id="select-all-stickers" class="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm flex flex-col items-center gap-1">
+                                                                <i data-lucide="check-circle" class="w-4 h-4"></i> 
+                                                                <span class="text-xs">전체<br>선택</span>
+                                                            </button>
+                                                            ` : ''}
+                                                            <button id="delete-selected-stickers" class="py-2 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm flex flex-col items-center gap-1 opacity-50 cursor-not-allowed" disabled>
+                                                                <i data-lucide="trash-2" class="w-4 h-4"></i> 
+                                                                <span class="text-xs">삭제<br>(<span id="selected-count">0</span>)</span>
+                                                            </button>
+                                                        </div>
+                                                        ` : ''}
+                                                    </div>
+                                                    <div class="flex items-center justify-between text-xs text-gray-400 mb-3">
+                                                        <span>jpg, gif, png, bmp, webp, webm, mp4, mp3 지원 (개당 최대 30MB)</span>
+                                                        <span>스티커 개수: ${(editingCharacter?.stickers || []).length}개</span>
+                                                    </div>
+                                                    <div class="flex items-center justify-between text-xs text-gray-500 mb-3">
+                                                        <span>전체 저장 용량: ${this.formatBytes(this.getLocalStorageUsage())}</span>
+                                                        <span>총 용량: ${this.formatBytes(this.calculateCharacterStickerSize(editingCharacter || {}))}</span>
+                                                    </div>
+                                                    <div id="sticker-container" class="grid grid-cols-4 gap-2">
+                                                        ${this.renderStickerGrid(editingCharacter?.stickers || [])}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </details>
                                         <!-- Memory Section -->
                                         <details class="group border-t border-gray-700 pt-2">
                                             <summary class="flex items-center justify-between cursor-pointer list-none py-2">
@@ -1025,7 +1862,7 @@ class PersonaChatApp {
             `;
     }
 
-    renderMemoryInput(memoryText = '', index) {
+    renderMemoryInput(memoryText = '') {
         return `
                 <div class="memory-item flex items-center gap-2">
                     <input type="text" class="memory-input flex-1 px-3 py-2 bg-gray-700 text-white rounded-lg border-0 focus:ring-2 focus:ring-blue-500/50 text-sm" value="${memoryText}" placeholder="기억할 내용을 입력하세요...">
@@ -1034,6 +1871,64 @@ class PersonaChatApp {
                     </button>
                 </div>
             `;
+    }
+
+    renderStickerGrid(stickers) {
+        if (!stickers || stickers.length === 0) {
+            return '<div class="col-span-4 text-center text-gray-400 text-sm py-4">아직 스티커가 없습니다.</div>';
+        }
+        
+        const isSelectionMode = this.state.stickerSelectionMode;
+        const selectedIndices = this.state.selectedStickerIndices || [];
+        
+        return stickers.map((sticker, index) => {
+            const isSelected = selectedIndices.includes(index);
+            const isVideo = sticker.type && (sticker.type.startsWith('video/') || sticker.type === 'video/mp4' || sticker.type === 'video/webm');
+            const isAudio = sticker.type && sticker.type.startsWith('audio/');
+            
+            let content = '';
+            if (isAudio) {
+                content = `
+                    <div class="w-full h-16 bg-gray-600 rounded-lg flex items-center justify-center">
+                        <i data-lucide="music" class="w-6 h-6 text-gray-300"></i>
+                    </div>
+                    <div class="text-xs text-gray-300 text-center truncate mt-1">${sticker.name}</div>
+                `;
+            } else if (isVideo) {
+                content = `
+                    <video class="w-full h-16 object-cover rounded-lg" muted loop autoplay>
+                        <source src="${sticker.dataUrl}" type="${sticker.type}">
+                    </video>
+                    <div class="text-xs text-gray-300 text-center truncate mt-1">${sticker.name}</div>
+                `;
+            } else {
+                content = `
+                    <img src="${sticker.dataUrl}" alt="${sticker.name}" class="w-full h-16 object-cover rounded-lg">
+                    <div class="text-xs text-gray-300 text-center truncate mt-1">${sticker.name}</div>
+                `;
+            }
+            
+            return `
+                <div class="sticker-item relative group ${isSelected && isSelectionMode ? 'ring-2 ring-blue-500' : ''}" ${isSelectionMode ? `data-index="${index}"` : ''}>
+                    ${isSelectionMode ? `
+                        <div class="absolute -top-2 -left-2 z-10">
+                            <input type="checkbox" class="sticker-checkbox w-5 h-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" data-index="${index}" ${isSelected ? 'checked' : ''} onclick="window.personaApp.handleStickerSelection(${index}, this.checked)">
+                        </div>
+                    ` : ''}
+                    ${content}
+                    ${!isSelectionMode ? `
+                        <div class="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                            <button class="edit-sticker-name-btn p-1 bg-blue-600 rounded-full text-white" data-index="${index}" title="이름 변경">
+                                <i data-lucide="edit-3" class="w-2 h-2 pointer-events-none"></i>
+                            </button>
+                            <button class="delete-sticker-btn p-1 bg-red-600 rounded-full text-white" data-index="${index}" title="삭제">
+                                <i data-lucide="x" class="w-3 h-3 pointer-events-none"></i>
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
     }
 
     addMemoryField() {
@@ -1137,6 +2032,7 @@ class PersonaChatApp {
                 message_writing: document.getElementById('prompt-main-message_writing').value,
                 language: document.getElementById('prompt-main-language').value,
                 additional_instructions: document.getElementById('prompt-main-additional_instructions').value,
+                sticker_usage: document.getElementById('prompt-main-sticker_usage').value,
             },
             profile_creation: document.getElementById('prompt-profile_creation').value,
         };
@@ -1149,15 +2045,30 @@ class PersonaChatApp {
     }
 
     openNewCharacterModal() {
-        this.setState({ editingCharacter: { memories: [], proactiveEnabled: true }, showCharacterModal: true });
+        this.setState({ 
+            editingCharacter: { memories: [], proactiveEnabled: true }, 
+            showCharacterModal: true,
+            stickerSelectionMode: false,
+            selectedStickerIndices: []
+        });
     }
 
     openEditCharacterModal(character) {
-        this.setState({ editingCharacter: { ...character, memories: character.memories || [] }, showCharacterModal: true });
+        this.setState({ 
+            editingCharacter: { ...character, memories: character.memories || [] }, 
+            showCharacterModal: true,
+            stickerSelectionMode: false,
+            selectedStickerIndices: []
+        });
     }
 
     closeCharacterModal() {
-        this.setState({ showCharacterModal: false, editingCharacter: null });
+        this.setState({ 
+            showCharacterModal: false, 
+            editingCharacter: null,
+            stickerSelectionMode: false,
+            selectedStickerIndices: []
+        });
     }
 
     handleAvatarChange(e, isCard = false) {
@@ -1172,6 +2083,294 @@ class PersonaChatApp {
                 });
             }
         }
+    }
+
+    async handleStickerFileSelect(e) {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        
+        const currentStickers = this.state.editingCharacter?.stickers || [];
+        const newStickers = [];
+        
+        // 대량 파일을 순차적으로 처리하여 메모리 오버플로우 방지
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            
+            // 10개마다 잠시 대기
+            if (i > 0 && i % 10 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // 파일 크기 체크 (5MB 제한)
+            if (file.size > 30 * 1024 * 1024) {
+                this.showInfoModal("파일 크기 초과", `${file.name}은(는) 30MB를 초과합니다. 용량을 줄여주세요.`);
+                continue;
+            }
+            
+            // 파일 타입 체크
+            const allowedTypes = [
+                'image/jpeg', 'image/jpg', 'image/gif', 'image/png', 
+                'image/bmp', 'image/webp', 'video/webm', 'video/mp4', 'audio/mpeg', 'audio/mp3'
+            ];
+            if (!allowedTypes.includes(file.type)) {
+                this.showInfoModal("지원하지 않는 형식", `${file.name}은(는) 지원하지 않는 파일 형식입니다.`);
+                continue;
+            }
+            
+            try {
+                let dataUrl;
+                let processedSize = file.size;
+                
+                // 이미지 파일인 경우 압축 처리
+                if (file.type.startsWith('image/')) {
+                    // GIF는 압축하지 않음 (애니메이션 보존)
+                    if (file.type === 'image/gif') {
+                        dataUrl = await this.toBase64(file);
+                    } else {
+                        // 다른 이미지는 압축 (최대 800x800, 품질 0.7)
+                        dataUrl = await this.compressImageForSticker(file, 1024, 1024, 0.85);
+                        // 압축된 크기 계산 (대략적)
+                        const compressedBase64 = dataUrl.split(',')[1];
+                        processedSize = Math.round(compressedBase64.length * 0.75);
+                    }
+                } else {
+                    // 비디오, 오디오는 그대로 사용
+                    dataUrl = await this.toBase64(file);
+                }
+                
+                const sticker = {
+                    id: Date.now() + Math.random(),
+                    name: file.name,
+                    type: file.type,
+                    dataUrl: dataUrl,
+                    originalSize: file.size,
+                    size: processedSize
+                };
+                newStickers.push(sticker);
+            } catch (error) {
+                console.error(`스티커 처리 오류: ${file.name}`, error);
+                this.showInfoModal("스티커 처리 오류", `${file.name}을(를) 처리하는 중 오류가 발생했습니다.`);
+            }
+        }
+        
+        if (newStickers.length > 0) {
+            const currentEditing = this.state.editingCharacter || {};
+            
+            // 캐릭터별 스티커 용량 제한 제거
+            
+            const updatedStickers = [...currentStickers, ...newStickers];
+            const updatedCharacterData = { 
+                ...currentEditing, 
+                stickers: updatedStickers 
+            };
+            
+            // 전체 저장 공간 체크
+            const characterDataString = JSON.stringify(updatedCharacterData);
+            const storageCheck = this.checkStorageSpace(characterDataString, 'personaChat_characters_v16');
+            
+            if (!storageCheck.canSave) {
+                this.showInfoModal(
+                    "전체 저장 공간 부족", 
+                    `현재 사용량: ${storageCheck.current}\n예상 사용량: ${storageCheck.total}\n\n브라우저 저장 공간이 부족합니다. 오래된 대화나 다른 캐릭터의 데이터를 삭제해주세요.`
+                );
+                return;
+            }
+            
+            this.shouldSaveCharacters = true;
+            this.setState({ 
+                editingCharacter: updatedCharacterData
+            });
+        }
+        
+        // 파일 입력 초기화
+        e.target.value = '';
+    }
+    
+    handleDeleteSticker(index) {
+        const currentStickers = this.state.editingCharacter?.stickers || [];
+        const updatedStickers = currentStickers.filter((_, i) => i !== index);
+        const currentEditing = this.state.editingCharacter || {};
+        this.setState({ 
+            editingCharacter: { 
+                ...currentEditing, 
+                stickers: updatedStickers 
+            } 
+        });
+    }
+
+    handleEditStickerName(index) {
+        if (this.state.editingCharacter && this.state.editingCharacter.stickers) {
+            const sticker = this.state.editingCharacter.stickers[index];
+            if (!sticker) return;
+
+            const newName = prompt('스티커 이름을 입력하세요:', sticker.name);
+            if (newName !== null && newName.trim() !== '') {
+                const newStickers = [...this.state.editingCharacter.stickers];
+                newStickers[index] = { ...sticker, name: newName.trim() };
+                this.setState({ 
+                    editingCharacter: { 
+                        ...this.state.editingCharacter, 
+                        stickers: newStickers 
+                    } 
+                });
+            }
+        }
+    }
+
+    toggleStickerSelectionMode() {
+        console.log('Toggling sticker selection mode - current state:', this.state.stickerSelectionMode);
+        
+        // 상태를 먼저 업데이트
+        this.state.stickerSelectionMode = !this.state.stickerSelectionMode;
+        this.state.selectedStickerIndices = [];
+        
+        console.log('New state set to:', this.state.stickerSelectionMode);
+        
+        // 스티커 섹션만 업데이트 (모달 전체 리렌더링 방지)
+        this.updateStickerSection();
+        
+        console.log('Sticker section updated');
+    }
+
+    updateStickerSection() {
+        // 스티커 그리드 업데이트
+        const stickerContainer = document.getElementById('sticker-container');
+        if (stickerContainer) {
+            const currentStickers = this.state.editingCharacter?.stickers || [];
+            stickerContainer.innerHTML = this.renderStickerGrid(currentStickers);
+        }
+        
+        // 토글 버튼 텍스트 업데이트
+        const toggleButton = document.getElementById('toggle-sticker-selection');
+        if (toggleButton) {
+            const textSpan = toggleButton.querySelector('.toggle-text');
+            if (textSpan) {
+                textSpan.innerHTML = this.state.stickerSelectionMode ? '선택<br>해제' : '선택<br>모드';
+            }
+        }
+        
+        // 전체 선택 버튼 추가/제거 (기존 버튼들은 유지)
+        let selectAllButton = document.getElementById('select-all-stickers');
+        if (this.state.stickerSelectionMode) {
+            if (!selectAllButton) {
+                // 전체 선택 버튼 추가 (토글 버튼 뒤에)
+                const selectAllHTML = `
+                    <button id="select-all-stickers" class="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm flex flex-col items-center gap-1">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i> 
+                        <span class="text-xs">전체<br>선택</span>
+                    </button>
+                `;
+                toggleButton.insertAdjacentHTML('afterend', selectAllHTML);
+            }
+        } else {
+            if (selectAllButton) {
+                selectAllButton.remove();
+            }
+        }
+        
+        // 삭제 버튼 초기화 (선택 해제시)
+        const deleteButton = document.getElementById('delete-selected-stickers');
+        if (deleteButton && !this.state.stickerSelectionMode) {
+            deleteButton.disabled = true;
+            deleteButton.classList.add('opacity-50', 'cursor-not-allowed');
+            const countSpan = deleteButton.querySelector('#selected-count');
+            if (countSpan) countSpan.textContent = '0';
+        }
+        
+        // 아이콘 다시 생성
+        if (window.lucide) {
+            window.lucide.createIcons();
+        }
+    }
+
+
+    handleStickerSelection(index, isChecked) {
+        console.log('Sticker selection changed:', index, isChecked);
+        const currentSelected = this.state.selectedStickerIndices || [];
+        let newSelected;
+        
+        if (isChecked) {
+            newSelected = [...currentSelected, index];
+        } else {
+            newSelected = currentSelected.filter(i => i !== index);
+        }
+        
+        console.log('New selected indices:', newSelected);
+        
+        // 상태 직접 업데이트
+        this.state.selectedStickerIndices = newSelected;
+        
+        // UI 요소 즉시 업데이트
+        const countElement = document.getElementById('selected-count');
+        const deleteButton = document.getElementById('delete-selected-stickers');
+        
+        console.log('Count element:', countElement);
+        console.log('Delete button:', deleteButton);
+        
+        if (countElement) {
+            countElement.textContent = newSelected.length;
+            console.log('Updated count to:', newSelected.length);
+        }
+        
+        if (deleteButton) {
+            if (newSelected.length > 0) {
+                deleteButton.disabled = false;
+                deleteButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                console.log('Enabled delete button');
+            } else {
+                deleteButton.disabled = true;
+                deleteButton.classList.add('opacity-50', 'cursor-not-allowed');
+                console.log('Disabled delete button');
+            }
+        }
+    }
+
+    handleSelectAllStickers() {
+        const currentStickers = this.state.editingCharacter?.stickers || [];
+        const allIndices = currentStickers.map((_, index) => index);
+        
+        // 상태 직접 업데이트
+        this.state.selectedStickerIndices = allIndices;
+        
+        // UI 업데이트 - 체크박스들 모두 체크
+        const checkboxes = document.querySelectorAll('.sticker-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+        
+        // 선택 개수와 삭제 버튼 업데이트
+        const countElement = document.getElementById('selected-count');
+        const deleteButton = document.getElementById('delete-selected-stickers');
+        
+        if (countElement) countElement.textContent = allIndices.length;
+        if (deleteButton) {
+            deleteButton.disabled = false;
+            deleteButton.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    }
+
+    handleDeleteSelectedStickers() {
+        const selectedIndices = this.state.selectedStickerIndices || [];
+        if (selectedIndices.length === 0) return;
+
+        const currentStickers = this.state.editingCharacter?.stickers || [];
+        
+        // 선택된 인덱스를 Set으로 변환하여 빠른 검색 가능
+        const selectedSet = new Set(selectedIndices);
+        
+        // 선택되지 않은 스티커만 남김
+        const updatedStickers = currentStickers.filter((_, index) => !selectedSet.has(index));
+
+        // 상태 직접 업데이트
+        this.state.editingCharacter = { 
+            ...this.state.editingCharacter, 
+            stickers: updatedStickers 
+        };
+        this.state.selectedStickerIndices = [];
+        this.state.stickerSelectionMode = false; // 삭제 후 선택 모드 해제
+        
+        // UI 전체 업데이트
+        this.updateStickerSection();
     }
 
     async handleSaveCharacter() {
@@ -1200,18 +2399,33 @@ class PersonaChatApp {
             memories,
             proactiveEnabled,
             messageCountSinceLastSummary: this.state.editingCharacter?.messageCountSinceLastSummary || 0,
-            media: this.state.editingCharacter?.media || [] // Preserve existing media
+            media: this.state.editingCharacter?.media || [], // Preserve existing media
+            stickers: this.state.editingCharacter?.stickers || [] // Preserve existing stickers
         };
+
+        // 저장 전 용량 체크
+        const characterDataString = JSON.stringify(characterData);
+        const storageCheck = this.checkStorageSpace(characterDataString, 'personaChat_characters_v16');
+        
+        if (!storageCheck.canSave) {
+            this.showInfoModal(
+                "저장 공간 부족", 
+                `현재 사용량: ${storageCheck.current}\n예상 사용량: ${storageCheck.total}\n\n스티커나 이미지를 줄이거나 오래된 대화를 삭제해주세요.`
+            );
+            return;
+        }
 
         if (this.state.editingCharacter && this.state.editingCharacter.id) {
             const updatedCharacters = this.state.characters.map(c =>
                 c.id === this.state.editingCharacter.id ? { ...c, ...characterData } : c
             );
+            this.shouldSaveCharacters = true;
             this.setState({ characters: updatedCharacters });
         } else {
-            const newCharacter = { id: Date.now(), ...characterData, messageCountSinceLastSummary: 0, proactiveEnabled: true, media: [] };
+            const newCharacter = { id: Date.now(), ...characterData, messageCountSinceLastSummary: 0, proactiveEnabled: true, media: [], stickers: [] };
             const newCharacters = [newCharacter, ...this.state.characters];
             const newMessages = { ...this.state.messages, [newCharacter.id]: [] };
+            this.shouldSaveCharacters = true;
             this.setState({
                 characters: newCharacters,
                 messages: newMessages,
@@ -1223,21 +2437,40 @@ class PersonaChatApp {
 
     handleDeleteCharacter(characterId) {
         this.showConfirmModal(
-            language.modal.deleteCharacter.title, language.modal.deleteCharacter.message,
+            language.modal.characterDeleteConfirm.title, language.modal.characterDeleteConfirm.message,
             () => {
                 const newCharacters = this.state.characters.filter(c => c.id !== characterId);
                 const newMessages = { ...this.state.messages };
+                const newChatRooms = { ...this.state.chatRooms };
+                const newUnreadCounts = { ...this.state.unreadCounts };
+                
+                // 캐릭터의 모든 채팅방과 관련 메시지 삭제
+                const characterChatRooms = this.state.chatRooms[characterId] || [];
+                characterChatRooms.forEach(chatRoom => {
+                    delete newMessages[chatRoom.id];
+                    delete newUnreadCounts[chatRoom.id];
+                });
+                
+                // 캐릭터 채팅방 목록 삭제
+                delete newChatRooms[characterId];
+                
+                // 기존 메시지 구조 삭제 (호환성)
                 delete newMessages[characterId];
 
                 let newSelectedChatId = this.state.selectedChatId;
-                if (this.state.selectedChatId === characterId) {
-                    newSelectedChatId = newCharacters.length > 0 ? newCharacters[0].id : null;
+                // 현재 선택된 채팅이 삭제되는 캐릭터의 것이라면 다른 채팅으로 변경
+                const selectedChatRoom = this.getCurrentChatRoom();
+                if (selectedChatRoom && selectedChatRoom.characterId === characterId) {
+                    newSelectedChatId = this.getFirstAvailableChatRoom();
                 }
 
                 this.setState({
                     characters: newCharacters,
                     messages: newMessages,
-                    selectedChatId: newSelectedChatId
+                    chatRooms: newChatRooms,
+                    unreadCounts: newUnreadCounts,
+                    selectedChatId: newSelectedChatId,
+                    expandedCharacterId: null
                 });
             }
         );
@@ -1247,7 +2480,7 @@ class PersonaChatApp {
         const file = e.target.files[0];
         if (!file) return;
 
-        if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        if (file.size > 30 * 1024 * 1024) { // 30MB limit
             this.showInfoModal(language.modal.imageFileSizeExceeded.title, language.modal.imageFileSizeExceeded.message);
             e.target.value = '';
             return;
@@ -1267,12 +2500,13 @@ class PersonaChatApp {
         }
     }
 
-    async handleSendMessage(content, type = 'text') {
+    async handleSendMessage(content, type = 'text', stickerData = null) {
         const { selectedChatId, isWaitingForResponse, settings, imageToSend } = this.state;
 
         if (!selectedChatId || isWaitingForResponse) return;
         if (type === 'text' && !content.trim() && !imageToSend) return;
         if (type === 'image' && !imageToSend) return;
+        if (type === 'sticker' && !content.trim()) return;
 
         if (!settings.apiKey) {
             this.showInfoModal(language.modal.apiKeyRequired.title, language.modal.apiKeyRequired.message);
@@ -1286,10 +2520,14 @@ class PersonaChatApp {
             type: type,
             content: content,
             time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-            isMe: true
+            isMe: true,
+            ...(type === 'sticker' && stickerData ? { stickerData } : {})
         };
 
-        const charIndex = this.state.characters.findIndex(c => c.id === selectedChatId);
+        const selectedChatRoom = this.getCurrentChatRoom();
+        if (!selectedChatRoom) return;
+        
+        const charIndex = this.state.characters.findIndex(c => c.id === selectedChatRoom.characterId);
         if (charIndex === -1) return;
         const updatedCharacters = [...this.state.characters];
 
@@ -1341,8 +2579,25 @@ class PersonaChatApp {
     }
 
     async triggerApiCall(currentMessagesState, isProactive = false, isReroll = false, forceSummary = false) {
-        const chatId = isProactive ? currentMessagesState.id : this.state.selectedChatId;
-        const character = this.state.characters.find(c => c.id === chatId);
+        let chatId, character;
+        
+        if (isProactive) {
+            // Proactive 모드에서는 character 객체가 전달됨
+            character = currentMessagesState;
+            // 해당 캐릭터의 첫 번째 채팅방 찾기
+            const characterChatRooms = this.state.chatRooms[character.id] || [];
+            if (characterChatRooms.length > 0) {
+                chatId = characterChatRooms[0].id;
+            } else {
+                // 채팅방이 없으면 새로 생성
+                chatId = this.createNewChatRoom(character.id);
+            }
+        } else {
+            // 일반 모드에서는 선택된 채팅방 사용
+            chatId = this.state.selectedChatId;
+            const chatRoom = this.getCurrentChatRoom();
+            character = chatRoom ? this.state.characters.find(c => c.id === chatRoom.characterId) : null;
+        }
 
         let history;
         if (isProactive) {
@@ -1396,8 +2651,26 @@ class PersonaChatApp {
                     time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
                     isMe: false,
                     isError: false,
-                    type: 'text',
+                    type: messagePart.sticker ? 'sticker' : 'text',
+                    hasText: !!(messagePart.content && messagePart.content.trim()),
                 };
+                
+                // 스티커가 포함된 경우 스티커 정보 추가
+                if (messagePart.sticker) {
+                    botMessage.stickerId = messagePart.sticker;
+                    const foundSticker = character.stickers?.find(s => {
+                        // ID로 찾기 (숫자 비교)
+                        if (s.id == messagePart.sticker) return true;
+                        // 이름으로 찾기 (정확한 문자열 비교)
+                        if (s.name === messagePart.sticker) return true;
+                        // 파일명에서 확장자 제거한 이름으로 찾기
+                        const baseFileName = s.name.replace(/\.[^/.]+$/, "");
+                        const searchFileName = String(messagePart.sticker).replace(/\.[^/.]+$/, "");
+                        if (baseFileName === searchFileName) return true;
+                        return false;
+                    });
+                    botMessage.stickerName = foundSticker?.name || 'Unknown Sticker';
+                }
 
                 currentChatMessages = [...currentChatMessages, botMessage];
 
@@ -1665,7 +2938,174 @@ class PersonaChatApp {
         reader.onerror = (error) => reject(error);
     });
 
+    compressImageForSticker = (file, maxWidth, maxHeight, quality) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                // 비율 유지하면서 크기 조정
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height *= maxWidth / width;
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width *= maxHeight / height;
+                        height = maxHeight;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                
+                // 이미지 품질 개선을 위한 설정
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // 원본 포맷 유지하려고 시도, 실패시 JPEG
+                let mimeType = file.type;
+                if (!['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+                    mimeType = 'image/jpeg';
+                }
+                
+                resolve(canvas.toDataURL(mimeType, quality));
+            };
+            img.onerror = (error) => reject(error);
+        };
+        reader.onerror = (error) => reject(error);
+    });
+
     sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    // LocalStorage 사용량 체크 (이 앱 전용)
+    getLocalStorageUsage() {
+        const appKeys = [
+            'personaChat_settings_v16',
+            'personaChat_characters_v16', 
+            'personaChat_messages_v16',
+            'personaChat_unreadCounts_v16',
+            'personaChat_chatRooms_v16',
+            'personaChat_userStickers_v16'
+        ];
+        
+        let totalSize = 0;
+        for (const key of appKeys) {
+            const value = localStorage.getItem(key);
+            if (value) {
+                totalSize += value.length + key.length;
+            }
+        }
+        return totalSize;
+    }
+
+    // 바이트를 읽기 쉬운 형태로 변환
+    formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // 캐릭터 스티커 전체 용량 계산
+    calculateCharacterStickerSize(character) {
+        if (!character.stickers || character.stickers.length === 0) {
+            return 0;
+        }
+        
+        return character.stickers.reduce((total, sticker) => {
+            // Base64 데이터의 실제 크기 계산
+            if (sticker.dataUrl) {
+                const base64Data = sticker.dataUrl.split(',')[1] || '';
+                return total + Math.round(base64Data.length * 0.75); // Base64는 실제 데이터의 약 133%
+            }
+            return total + (sticker.size || 0);
+        }, 0);
+    }
+
+    // 저장 공간 체크 (수정됨 - 실제 데이터 크기만 계산)
+    checkStorageSpace(newData = '', existingKey = '') {
+        // 현재 이 앱이 사용하는 localStorage 크기만 계산
+        const appKeys = [
+            'personaChat_settings_v16',
+            'personaChat_characters_v16', 
+            'personaChat_messages_v16',
+            'personaChat_unreadCounts_v16',
+            'personaChat_chatRooms_v16',
+            'personaChat_userStickers_v16'
+        ];
+        
+        let currentAppUsage = 0;
+        for (const key of appKeys) {
+            const value = localStorage.getItem(key);
+            if (value) {
+                currentAppUsage += value.length + key.length;
+            }
+        }
+        
+        // 기존 데이터가 있다면 그 크기를 제외하고 새 데이터 크기만 추가
+        let existingSize = 0;
+        if (existingKey) {
+            const existing = localStorage.getItem(existingKey);
+            if (existing) {
+                existingSize = existing.length;
+            }
+        }
+        
+        const newDataSize = newData.length;
+        const totalAfterAdd = currentAppUsage - existingSize + newDataSize;
+        
+        // 50MB를 경고 기준으로 설정
+        const warningLimit = 50 * 1024 * 1024; // 50MB
+        
+        if (totalAfterAdd > warningLimit) {
+            const currentFormatted = this.formatBytes(currentAppUsage);
+            const totalFormatted = this.formatBytes(totalAfterAdd);
+            return {
+                canSave: false,
+                current: currentFormatted,
+                total: totalFormatted
+            };
+        }
+        
+        return { canSave: true };
+    }
+
+    // 캐릭터 스티커 용량 체크
+    checkCharacterStickerLimit(character, newStickers = []) {
+        const currentStickerSize = this.calculateCharacterStickerSize(character);
+        const newStickerSize = newStickers.reduce((total, sticker) => {
+            if (sticker.dataUrl) {
+                const base64Data = sticker.dataUrl.split(',')[1] || '';
+                return total + Math.round(base64Data.length * 0.75);
+            }
+            return total + (sticker.size || 0);
+        }, 0);
+        
+        const totalAfterAdd = currentStickerSize + newStickerSize;
+        const stickerLimit = 100 * 1024 * 1024; // 100MB
+        
+        if (totalAfterAdd > stickerLimit) {
+            return {
+                canAdd: false,
+                current: this.formatBytes(currentStickerSize),
+                afterAdd: this.formatBytes(totalAfterAdd),
+                limit: this.formatBytes(stickerLimit)
+            };
+        }
+        
+        return { canAdd: true };
+    }
 
     formatDateSeparator = (date) => {
         return new Intl.DateTimeFormat('ko-KR', {
@@ -1931,13 +3371,17 @@ class PersonaChatApp {
     }
 
     // --- BACKUP & RESTORE ---
-    handleBackup() {
+    async handleBackup() {
         try {
             const backupData = {
-                settings: this.loadFromLocalStorage('personaChat_settings_v16', {}),
-                characters: this.loadFromLocalStorage('personaChat_characters_v16', []),
-                messages: this.loadFromLocalStorage('personaChat_messages_v16', {}),
-                unreadCounts: this.loadFromLocalStorage('personaChat_unreadCounts_v16', {}),
+                version: 'v16',
+                timestamp: new Date().toISOString(),
+                settings: await this.loadFromLocalStorage('personaChat_settings_v16', {}),
+                characters: await this.loadFromLocalStorage('personaChat_characters_v16', []),
+                messages: await this.loadFromLocalStorage('personaChat_messages_v16', {}),
+                unreadCounts: await this.loadFromLocalStorage('personaChat_unreadCounts_v16', {}),
+                chatRooms: await this.loadFromLocalStorage('personaChat_chatRooms_v16', {}),
+                userStickers: await this.loadFromLocalStorage('personaChat_userStickers_v16', [])
             };
 
             const jsonString = JSON.stringify(backupData, null, 2);
@@ -2073,6 +3517,49 @@ class PersonaChatApp {
         reader.readAsText(file);
     }
 
+    resetPromptToDefault(section, key, promptName) {
+        this.showConfirmModal(
+            '프롬프트 초기화',
+            `"${promptName}"을(를) 기본값으로 되돌리시겠습니까?\n현재 설정은 모두 사라집니다.`,
+            () => {
+                // 기본 프롬프트 가져오기
+                import('./defauts.js').then(({ defaultPrompts }) => {
+                    const currentPrompts = { ...this.state.settings.prompts };
+                    
+                    if (section === 'main') {
+                        // 메인 프롬프트의 특정 키 리셋
+                        currentPrompts.main[key] = defaultPrompts.main[key];
+                    } else if (section === 'profile_creation') {
+                        // 프로필 생성 프롬프트 전체 리셋
+                        currentPrompts.profile_creation = defaultPrompts.profile_creation;
+                    }
+                    
+                    // 상태 직접 업데이트
+                    this.state.settings.prompts = currentPrompts;
+                    
+                    // 해당 textarea 업데이트
+                    let textareaId;
+                    if (section === 'main') {
+                        textareaId = `prompt-main-${key}`;
+                    } else if (section === 'profile_creation') {
+                        textareaId = 'prompt-profile_creation';
+                    }
+                    
+                    const textarea = document.getElementById(textareaId);
+                    if (textarea) {
+                        if (section === 'main') {
+                            textarea.value = defaultPrompts.main[key];
+                        } else if (section === 'profile_creation') {
+                            textarea.value = defaultPrompts.profile_creation;
+                        }
+                    }
+                    
+                    this.showInfoModal('초기화 완료', `"${promptName}"이(가) 기본값으로 되돌려졌습니다.`);
+                });
+            }
+        );
+    }
+
     // --- API CALL ---
     async callGeminiAPIForProfile(apiKey, model, userName, userDescription) {
         const profilePrompt = this.state.settings.prompts.profile_creation
@@ -2155,6 +3642,14 @@ class PersonaChatApp {
                 } else {
                     parts.push({ text: msg.content || "(User sent an image that is no longer available)" });
                 }
+            } else if (msg.isMe && msg.type === 'sticker' && msg.stickerData) {
+                // 페르소나 스티커: 스티커 이름만 AI에게 전송 (파일 데이터는 전송하지 않음)
+                const stickerName = msg.stickerData.stickerName || 'Unknown Sticker';
+                let stickerText = `[사용자가 "${stickerName}" 스티커를 보냄]`;
+                if (msg.content && msg.content.trim()) {
+                    stickerText += ` ${msg.content}`;
+                }
+                parts.push({ text: stickerText });
             } else if (msg.content) {
                 parts.push({ text: msg.content });
             }
@@ -2197,12 +3692,17 @@ class PersonaChatApp {
         }
 
         const prompts = this.state.settings.prompts.main;
+        
+        // 스티커 정보 준비
+        const availableStickers = character.stickers?.map(sticker => `${sticker.id} (${sticker.name})`).join(', ') || 'none';
+        
         const guidelines = [
             prompts.memory_generation,
             prompts.character_acting,
             prompts.message_writing,
             prompts.language,
-            prompts.additional_instructions
+            prompts.additional_instructions,
+            prompts.sticker_usage?.replace('{availableStickers}', availableStickers) || ''
         ].join('\n\n');
 
         const masterPrompt = `
@@ -2236,6 +3736,15 @@ ${character.memories && character.memories.length > 0 ? character.memories.map(m
 - 어조/말투 (${character.tone}/10): "공손하고 예의바름" <-> "싸가지 없음". This is the character's politeness and language style. A low value means polite and gentle. A high value means rude and blunt.
 *These are general tendencies. Adapt to the situation.*
 
+# Sticker Collection
+${character.stickers && character.stickers.length > 0 ? 
+  `${character.name} has access to the following stickers that can be used to express emotions and reactions:
+${character.stickers.map(sticker => `- ${sticker.id}: "${sticker.name}" (${sticker.type})`).join('\n')}
+
+## Sticker Usage
+${prompts.sticker_usage?.replace('{character.name}', character.name).replace('{availableStickers}', availableStickers) || ''}` : 
+  `${character.name} has no stickers available. Use only text-based expressions.`}
+
 I read all Informations carefully. First, let's remind my Guidelines again.
 
 [## Guidelines]
@@ -2262,9 +3771,10 @@ ${guidelines.replace(/{character.name}/g, character.name).replace('{timeContext}
                                 type: "OBJECT",
                                 properties: {
                                     "delay": { "type": "INTEGER" },
-                                    "content": { "type": "STRING" }
+                                    "content": { "type": "STRING" },
+                                    "sticker": { "type": "STRING" }
                                 },
-                                required: ["delay", "content"]
+                                required: ["delay"]
                             }
                         },
                         "newMemory": { "type": "STRING" }
@@ -2296,7 +3806,8 @@ ${guidelines.replace(/{character.name}/g, character.name).replace('{timeContext}
             }
 
             if (data.candidates && data.candidates.length > 0 && data.candidates[0].content?.parts[0]?.text) {
-                const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
+                const rawResponseText = data.candidates[0].content.parts[0].text;
+                const parsed = JSON.parse(rawResponseText);
                 parsed.reactionDelay = Math.max(0, parsed.reactionDelay || 0);
                 return parsed;
             } else {
