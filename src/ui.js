@@ -61,7 +61,6 @@ function shouldUpdateMainChat(oldState, newState) {
         JSON.stringify(oldState.messages) !== JSON.stringify(newState.messages) ||
         oldState.typingCharacterId !== newState.typingCharacterId ||
         oldState.isWaitingForResponse !== newState.isWaitingForResponse ||
-        oldState.sidebarCollapsed !== newState.sidebarCollapsed ||
         oldState.showInputOptions !== newState.showInputOptions ||
         oldState.imageToSend !== newState.imageToSend ||
         oldState.showUserStickerPanel !== newState.showUserStickerPanel ||
