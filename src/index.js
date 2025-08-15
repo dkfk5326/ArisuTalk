@@ -1575,12 +1575,12 @@ class PersonaChatApp {
             const backupData = {
                 version: 'v16',
                 timestamp: new Date().toISOString(),
-                settings: await loadFromLocalStorage('personaChat_settings_v16', {}),
-                characters: await loadFromLocalStorage('personaChat_characters_v16', []),
-                messages: await loadFromLocalStorage('personaChat_messages_v16', {}),
-                unreadCounts: await loadFromLocalStorage('personaChat_unreadCounts_v16', {}),
-                chatRooms: await loadFromLocalStorage('personaChat_chatRooms_v16', {}),
-                userStickers: await loadFromLocalStorage('personaChat_userStickers_v16', [])
+                settings: this.state.settings,
+                characters: this.state.characters,
+                messages: this.state.messages,
+                unreadCounts: this.state.unreadCounts,
+                chatRooms: this.state.chatRooms,
+                userStickers: this.state.userStickers
             };
 
             const jsonString = JSON.stringify(backupData, null, 2);
@@ -1620,6 +1620,8 @@ class PersonaChatApp {
                             saveToLocalStorage('personaChat_characters_v16', backupData.characters);
                             saveToLocalStorage('personaChat_messages_v16', backupData.messages);
                             saveToLocalStorage('personaChat_unreadCounts_v16', backupData.unreadCounts);
+                            saveToLocalStorage('personaChat_chatRooms_v16', backupData.chatRooms || {});
+                            saveToLocalStorage('personaChat_userStickers_v16', backupData.userStickers || []);
                             this.showInfoModal(language.modal.restoreComplete.title, language.modal.restoreComplete.message);
                             setTimeout(() => window.location.reload(), 2000);
                         }
