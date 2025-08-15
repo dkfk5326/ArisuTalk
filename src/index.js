@@ -1033,7 +1033,7 @@ class PersonaChatApp {
             return;
         }
 
-        const response = await callGeminiAPI(this.state.settings.apiKey, this.state.settings.model, this.state.settings.userName, this.state.settings.userDescription, character, history, isProactive, forceSummary);
+        const response = await callGeminiAPI(this.state.settings.apiKey, this.state.settings.model, this.state.settings.userName, this.state.settings.userDescription, character, history, this.state.settings.prompts, isProactive, forceSummary);
 
         if (response.newMemory && response.newMemory.trim() !== '') {
             const charIndex = this.state.characters.findIndex(c => c.id === character.id);
@@ -1165,7 +1165,7 @@ class PersonaChatApp {
         }
 
         try {
-            const profile = await callGeminiAPIForProfile(apiKey, model, userName, userDescription);
+            const profile = await callGeminiAPIForProfile(apiKey, model, userName, userDescription, this.state.settings.prompts.profile_creation);
             if (profile.error) throw new Error(profile.error);
 
             const tempCharacter = {
@@ -1184,7 +1184,7 @@ class PersonaChatApp {
                 isRandom: true
             };
 
-            const response = await callGeminiAPI(apiKey, model, userName, userDescription, tempCharacter, [], true, false);
+            const response = await callGeminiAPI(apiKey, model, userName, userDescription, tempCharacter, [], this.state.settings.prompts, true, false);
             if (response.error) throw new Error(response.error);
             if (!response.messages || response.messages.length === 0) throw new Error("API did not return a first message.");
 

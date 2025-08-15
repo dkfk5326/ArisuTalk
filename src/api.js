@@ -1,4 +1,4 @@
-export async function callGeminiAPI(apiKey, model, userName, userDescription, character, history, isProactive = false, forceSummary = false) {
+export async function callGeminiAPI(apiKey, model, userName, userDescription, character, history, prompts, isProactive = false, forceSummary = false) {
     let contents = [];
     for (const msg of history) {
         const role = msg.isMe ? "user" : "model";
@@ -67,26 +67,26 @@ export async function callGeminiAPI(apiKey, model, userName, userDescription, ch
         timeContext += ` (summarize_memory: true)`;
     }
 
-    const prompts = this.state.settings.prompts.main;
+    const mainPrompts = prompts.main;
     
     // 스티커 정보 준비
     const availableStickers = character.stickers?.map(sticker => `${sticker.id} (${sticker.name})`).join(', ') || 'none';
     
     const guidelines = [
-        prompts.memory_generation,
-        prompts.character_acting,
-        prompts.message_writing,
-        prompts.language,
-        prompts.additional_instructions,
-        prompts.sticker_usage?.replace('{availableStickers}', availableStickers) || ''
+        mainPrompts.memory_generation,
+        mainPrompts.character_acting,
+        mainPrompts.message_writing,
+        mainPrompts.language,
+        mainPrompts.additional_instructions,
+        mainPrompts.sticker_usage?.replace('{availableStickers}', availableStickers) || ''
     ].join('\n\n');
 
     const masterPrompt = `
 # System Rules
-${prompts.system_rules}
+${mainPrompts.system_rules}
 
 ## Role and Objective of Assistant
-${prompts.role_and_objective.replace(/{character.name}/g, character.name)}
+${mainPrompts.role_and_objective.replace(/{character.name}/g, character.name)}
 
 ## Informations
 The information is composed of the settings and memories of ${character.name}, <user>, and the worldview in which they live.
@@ -118,7 +118,7 @@ ${character.stickers && character.stickers.length > 0 ?
 ${character.stickers.map(sticker => `- ${sticker.id}: "${sticker.name}" (${sticker.type})`).join('\n')}
 
 ## Sticker Usage
-${prompts.sticker_usage?.replace('{character.name}', character.name).replace('{availableStickers}', availableStickers) || ''}` : 
+${mainPrompts.sticker_usage?.replace('{character.name}', character.name).replace('{availableStickers}', availableStickers) || ''}` : 
   `${character.name} has no stickers available. Use only text-based expressions.`}
 
 I read all Informations carefully. First, let's remind my Guidelines again.
@@ -201,10 +201,11 @@ ${guidelines.replace(/{character.name}/g, character.name).replace('{timeContext}
     }
 }
 
-export async function callGeminiAPIForProfile(apiKey, model, userName, userDescription) {
-    const profilePrompt = this.state.settings.prompts.profile_creation
+export async function callGeminiAPIForProfile(apiKey, model, userName, userDescription, profileCreationPrompt) {
+    const profilePrompt = profileCreationPrompt
         .replace('{userName}', userName)
         .replace('{userDescription}', userDescription);
+
 
     const payload = {
         contents: [{
