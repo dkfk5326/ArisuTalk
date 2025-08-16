@@ -138,7 +138,7 @@ export function checkStorageSpace(newData = '', existingKey = '') {
     const newDataSize = newData.length;
     const totalAfterAdd = currentAppUsage - existingSize + newDataSize;
     
-    const warningLimit = 50 * 1024 * 1024; // 50MB
+    const warningLimit = 5 * 1024 * 1024; // 5MB
     
     if (totalAfterAdd > warningLimit) {
         const currentFormatted = formatBytes(currentAppUsage);
