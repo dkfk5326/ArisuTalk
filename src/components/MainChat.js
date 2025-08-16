@@ -295,7 +295,7 @@ function renderMessages(app) {
             const selectedChatRoom = app.getCurrentChatRoom();
             const character = selectedChatRoom ? app.state.characters.find(c => c.id === selectedChatRoom.characterId) : null;
             const imageData = character?.media?.find(m => m.id === msg.imageId);
-            const imageUrl = imageData ? imageData.dataUrl : 'placeholder.jpg'; // Add a placeholder
+            const imageUrl = imageData ? imageData.dataUrl : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // Transparent pixel
 
             const isExpanded = app.state.expandedStickers.has(msg.id);
             const sizeClass = isExpanded ? 'max-w-4xl' : 'max-w-xs';
