@@ -57,6 +57,7 @@ function shouldUpdateSidebar(oldState, newState) {
         oldState.sidebarCollapsed !== newState.sidebarCollapsed ||
         oldState.searchQuery !== newState.searchQuery ||
         oldState.expandedCharacterId !== newState.expandedCharacterId ||
+        oldState.editingChatRoomId !== newState.editingChatRoomId ||
         JSON.stringify(oldState.characters) !== JSON.stringify(newState.characters) ||
         oldState.selectedChatId !== newState.selectedChatId ||
         JSON.stringify(oldState.unreadCounts) !== JSON.stringify(newState.unreadCounts) ||

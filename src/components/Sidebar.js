@@ -70,6 +70,7 @@ function renderChatRoomItem(app, chatRoom) {
     const messages = app.state.messages[chatRoom.id] || [];
     const lastMessage = messages.slice(-1)[0];
     const isSelected = app.state.selectedChatId === chatRoom.id;
+    const isEditing = app.state.editingChatRoomId === chatRoom.id;
     const unreadCount = app.state.unreadCounts[chatRoom.id] || 0;
     
     let lastMessageContent = '채팅을 시작해보세요';
@@ -82,24 +83,48 @@ function renderChatRoomItem(app, chatRoom) {
             lastMessageContent = lastMessage.content;
         }
     }
+
+    const nameElement = isEditing
+        ? `<input type="text" 
+                 value="${chatRoom.name}" 
+                 class="flex-grow bg-gray-600 text-white rounded px-1 py-0 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                 onblur="window.personaApp.cancelEditingChatRoom()" 
+                 onclick="event.stopPropagation()" 
+                 autofocus>`
+        : `<h4 class="text-sm font-medium text-white truncate">${chatRoom.name}</h4>`;
+
+    const actionButtons = isEditing
+        ? `<button data-chat-room-id="${chatRoom.id}" class="confirm-rename-btn p-1 bg-green-600 hover:bg-green-700 rounded text-white" title="확인">
+               <i data-lucide="check" class="w-3 h-3"></i>
+           </button>`
+        : `<button data-chat-room-id="${chatRoom.id}" class="rename-chat-room-btn p-1 bg-gray-700 hover:bg-blue-600 rounded text-white" title="이름 바꾸기">
+               <i data-lucide="edit-3" class="w-3 h-3"></i>
+           </button>
+           <button data-chat-room-id="${chatRoom.id}" class="delete-chat-room-btn p-1 bg-red-600 hover:bg-red-700 rounded text-white" title="채팅방 삭제">
+               <i data-lucide="trash-2" class="w-3 h-3"></i>
+           </button>`;
+
+    const metaElement = isEditing 
+        ? '' 
+        : `<div class="flex items-center gap-2 shrink-0">
+            ${unreadCount > 0 ? `<span class="bg-red-500 text-white text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full leading-none">${unreadCount}</span>` : ''}
+            <span class="text-xs text-gray-400 shrink-0">${lastMessage?.time || ''}</span>
+           </div>`;
     
     return `
         <div class="chat-room-item group p-2 rounded-lg cursor-pointer transition-all duration-200 ${isSelected ? 'bg-blue-600' : 'hover:bg-gray-700'} relative">
-            <div onclick="window.personaApp.selectChatRoom('${chatRoom.id}')" class="flex items-center justify-between">
+            <div onclick="${isEditing ? 'event.stopPropagation()' : `window.personaApp.selectChatRoom('${chatRoom.id}')`}" class="flex items-center justify-between">
                 <div class="flex-1 min-w-0">
-                    <div class="flex items-center justify-between mb-1">
-                        <h4 class="text-sm font-medium text-white truncate">${chatRoom.name}</h4>
-                        <div class="flex items-center gap-2">
-                            ${unreadCount > 0 ? `<span class="bg-red-500 text-white text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full leading-none">${unreadCount}</span>` : ''}
-                            <span class="text-xs text-gray-400 shrink-0">${lastMessage?.time || ''}</span>
-                        </div>
+                    <div class="flex items-center justify-between mb-1 gap-2">
+                        ${nameElement}
+                        ${metaElement}
                     </div>
                     <p class="text-xs text-gray-400 truncate">${lastMessageContent}</p>
                 </div>
             </div>
-            <button onclick="window.personaApp.deleteChatRoom('${chatRoom.id}'); event.stopPropagation();" class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 bg-red-600 hover:bg-red-700 rounded text-white" title="채팅방 삭제">
-                <i data-lucide="trash-2" class="w-3 h-3"></i>
-            </button>
+            <div class="absolute top-1 right-1 ${isEditing ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity duration-200 flex items-center space-x-1">
+                ${actionButtons}
+            </div>
         </div>
     `;
 }

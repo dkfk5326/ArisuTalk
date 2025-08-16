@@ -68,6 +68,7 @@ class PersonaChatApp {
       showPromptModal: false,
       editingCharacter: null,
       editingMessageId: null,
+      editingChatRoomId: null,
       searchQuery: "",
       modal: { isOpen: false, title: "", message: "", onConfirm: null },
       showInputOptions: false,
@@ -544,9 +545,50 @@ class PersonaChatApp {
           messages: newMessages,
           unreadCounts: newUnreadCounts,
           selectedChatId: newSelectedChatId,
+          modal: { isOpen: false, title: "", message: "", onConfirm: null },
         });
       }
     );
+  }
+
+  startEditingChatRoom(chatRoomId) {
+    this.setState({ editingChatRoomId: chatRoomId });
+  }
+
+  cancelEditingChatRoom() {
+    this.setState({ editingChatRoomId: null });
+  }
+
+  saveChatRoomName(chatRoomId, newName) {
+    const newNameTrimmed = newName.trim();
+    if (newNameTrimmed === "") {
+      this.cancelEditingChatRoom();
+      return;
+    }
+
+    const chatRoom = this.getChatRoomById(chatRoomId);
+    if (!chatRoom) return;
+
+    const { characterId } = chatRoom;
+
+    this.setState({
+      chatRooms: {
+        ...this.state.chatRooms,
+        [characterId]: this.state.chatRooms[characterId].map(room => 
+            room.id === chatRoomId 
+                ? { ...room, name: newNameTrimmed } 
+                : room
+        ),
+      },
+      editingChatRoomId: null,
+    });
+  }
+
+  handleChatRoomNameKeydown(event, chatRoomId) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.cancelEditingChatRoom();
+    }
   }
 
   getChatRoomById(chatRoomId) {
