@@ -30,6 +30,13 @@ export function handleModalClick(e, app) {
     const editStickerNameBtn = e.target.closest('.edit-sticker-name-btn');
     if (editStickerNameBtn) app.handleEditStickerName(parseInt(editStickerNameBtn.dataset.index));
 
+    const stickerCheckbox = e.target.closest('.sticker-checkbox');
+    if (stickerCheckbox) {
+        const index = parseInt(stickerCheckbox.dataset.index);
+        const isChecked = stickerCheckbox.checked;
+        app.handleStickerSelection(index, isChecked);
+    }
+
     // Confirmation Modal
     if (e.target.closest('#modal-cancel')) app.closeModal();
     if (e.target.closest('#modal-confirm')) {

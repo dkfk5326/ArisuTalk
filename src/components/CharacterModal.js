@@ -75,7 +75,7 @@ function renderStickerGrid(app, stickers) {
                 <div class="absolute -top-2 -left-2 z-10">
                     <input type="checkbox" class="sticker-checkbox w-5 h-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" data-index="${index}" ${
               isSelected ? "checked" : ""
-            } onclick="window.personaApp.handleStickerSelection(${index}, this.checked)">
+            }>
                 </div>
             `
           : ""
