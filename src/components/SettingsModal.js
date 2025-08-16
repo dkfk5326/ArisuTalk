@@ -1,6 +1,21 @@
 
 import { language } from '../language.js';
 
+export function renderSnapshotList(app) {
+    return `
+        ${app.state.settingsSnapshots.map(snapshot => `
+            <div class="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                <span class="text-sm text-gray-300">${new Date(snapshot.timestamp).toLocaleString('ko-KR')}</span>
+                <div class="flex items-center gap-2">
+                    <button data-timestamp="${snapshot.timestamp}" class="restore-snapshot-btn p-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors" title="복원"><i data-lucide="history" class="w-4 h-4"></i></button>
+                    <button data-timestamp="${snapshot.timestamp}" class="delete-snapshot-btn p-1.5 bg-red-600 hover:bg-red-700 rounded text-white transition-colors" title="삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </div>
+            </div>
+        `).join('')}
+        ${app.state.settingsSnapshots.length === 0 ? '<p class="text-sm text-gray-500 text-center py-2">저장된 스냅샷이 없습니다.</p>' : ''}
+    `;
+}
+
 export function renderSettingsModal(app) {
     const { settings } = app.state;
     return `
@@ -117,6 +132,29 @@ export function renderSettingsModal(app) {
                             </div>
                         </div>
                     </details>
+                    <details class="group border-b border-gray-700 pb-2">
+                        <summary class="flex items-center justify-between cursor-pointer list-none py-2">
+                            <span class="text-base font-medium text-gray-200">설정 스냅샷</span>
+                            <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
+                        </summary>
+                        <div class="content-wrapper">
+                            <div class="content-inner pt-4 space-y-4">
+                                <div class="py-2">
+                                    <label class="flex items-center justify-between text-sm font-medium text-gray-300 cursor-pointer">
+                                        <span class="flex items-center"><i data-lucide="camera" class="w-4 h-4 mr-2"></i>스냅샷 활성화</span>
+                                        <div class="relative inline-block w-10 align-middle select-none">
+                                            <input type="checkbox" name="toggle" id="settings-snapshots-toggle" ${settings.snapshotsEnabled ? 'checked' : ''} class="absolute opacity-0 w-0 h-0 peer"/>
+                                            <label for="settings-snapshots-toggle" class="block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer peer-checked:bg-blue-600"></label>
+                                            <span class="absolute left-0.5 top-0.5 block w-5 h-5 rounded-full bg-white transition-transform duration-200 ease-in-out peer-checked:translate-x-4"></span>
+                                        </div>
+                                    </label>
+                                </div>
+                                <div id="snapshots-list" class="space-y-2" style="display: ${settings.snapshotsEnabled ? 'block' : 'none'}">
+                                    ${renderSnapshotList(app)}
+                                </div>
+                            </div>
+                        </div>
+                    </details>
                     <details class="group">
                         <summary class="flex items-center justify-between cursor-pointer list-none py-2">
                             <span class="text-base font-medium text-gray-200">데이터 관리</span>
@@ -136,7 +174,7 @@ export function renderSettingsModal(app) {
                 </div>
                 <div class="p-6 mt-auto border-t border-gray-700 shrink-0 flex justify-end space-x-3">
                     <button id="close-settings-modal" class="flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">취소</button>
-                    <button id="save-settings" class="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">저장</button>
+                    <button id="save-settings" class="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">완료</button>
                 </div>
             </div>
         </div>

@@ -1,6 +1,6 @@
 import { renderSidebar } from './components/Sidebar.js';
 import { renderMainChat } from './components/MainChat.js';
-import { renderSettingsModal } from './components/SettingsModal.js';
+import { renderSettingsModal, renderSnapshotList } from './components/SettingsModal.js';
 import { renderCharacterModal } from './components/CharacterModal.js';
 import { renderPromptModal } from './components/PromptModal.js';
 import { renderConfirmationModal } from './components/ConfirmationModal.js';
@@ -13,6 +13,14 @@ function renderModals(app) {
     if (app.state.showPromptModal) html += renderPromptModal(app);
     if (app.state.modal.isOpen) html += renderConfirmationModal(app);
     container.innerHTML = html;
+}
+
+function updateSnapshotList(app) {
+    const container = document.getElementById('snapshots-list');
+    if (container) {
+        container.innerHTML = renderSnapshotList(app);
+        lucide.createIcons();
+    }
 }
 
 // --- MAIN RENDER ORCHESTRATOR ---
@@ -31,8 +39,16 @@ export function render(app) {
         renderMainChat(app);
     }
 
-    if (isFirstRender || shouldUpdateModals(oldState, newState)) {
+    if (newState.showSettingsModal && !oldState.showSettingsModal) {
         renderModals(app);
+    } else if (oldState.showSettingsModal && !newState.showSettingsModal) {
+        renderModals(app);
+    } else if (newState.showSettingsModal && oldState.showSettingsModal) {
+        if (JSON.stringify(oldState.settingsSnapshots) !== JSON.stringify(newState.settingsSnapshots)) {
+            updateSnapshotList(app);
+        } else if (shouldUpdateModals(oldState, newState)) {
+            renderModals(app);
+        }
     }
 
     lucide.createIcons();
@@ -77,6 +93,7 @@ function shouldUpdateModals(oldState, newState) {
         oldState.modal.isOpen !== newState.modal.isOpen ||
         (newState.showSettingsModal && JSON.stringify(oldState.settings) !== JSON.stringify(newState.settings)) ||
         (newState.showCharacterModal && JSON.stringify(oldState.editingCharacter) !== JSON.stringify(newState.editingCharacter)) ||
-        (newState.showPromptModal && JSON.stringify(oldState.settings.prompts) !== JSON.stringify(newState.settings.prompts))
+        (newState.showPromptModal && JSON.stringify(oldState.settings.prompts) !== JSON.stringify(newState.settings.prompts)) ||
+        (newState.showSettingsModal && JSON.stringify(oldState.settingsSnapshots) !== JSON.stringify(newState.settingsSnapshots))
     );
 }

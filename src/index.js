@@ -6,6 +6,7 @@ import { render } from './ui.js';
 import { handleSidebarClick, handleSidebarInput } from './handlers/sidebarHandlers.js';
 import { handleMainChatClick, handleMainChatInput, handleMainChatKeypress, handleMainChatChange } from './handlers/mainChatHandlers.js';
 import { handleModalClick, handleModalInput, handleModalChange } from './handlers/modalHandlers.js';
+import { debounce, findMessageGroup } from './utils.js';
 
 // --- APP INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -28,6 +29,7 @@ class PersonaChatApp {
                 randomMessageFrequencyMin: 10,
                 randomMessageFrequencyMax: 120,
                 fontScale: 1.0,
+                snapshotsEnabled: true,
                 prompts: {
                     main: { ...this.defaultPrompts.main },
                     profile_creation: this.defaultPrompts.profile_creation
@@ -38,6 +40,7 @@ class PersonaChatApp {
             messages: {},
             unreadCounts: {},
             userStickers: [],
+            settingsSnapshots: [],
             selectedChatId: null,
             expandedCharacterId: null,
             isWaitingForResponse: false,
@@ -61,6 +64,27 @@ class PersonaChatApp {
         this.messagesEndRef = null;
         this.proactiveInterval = null;
         this.animatedMessageIds = new Set();
+        this.initialSettings = null;
+
+        this.debouncedSaveSettings = debounce((settings) => saveToLocalStorage('personaChat_settings_v16', settings), 500);
+        this.debouncedSaveCharacters = debounce((characters) => saveToLocalStorage('personaChat_characters_v16', characters), 500);
+        this.debouncedSaveChatRooms = debounce((chatRooms) => saveToLocalStorage('personaChat_chatRooms_v16', chatRooms), 500);
+        this.debouncedSaveMessages = debounce((messages) => saveToLocalStorage('personaChat_messages_v16', messages), 500);
+        this.debouncedSaveUnreadCounts = debounce((unreadCounts) => saveToLocalStorage('personaChat_unreadCounts_v16', unreadCounts), 500);
+        this.debouncedSaveUserStickers = debounce((userStickers) => saveToLocalStorage('personaChat_userStickers_v16', userStickers), 500);
+        this.debouncedSaveSettingsSnapshots = debounce((snapshots) => saveToLocalStorage('personaChat_settingsSnapshots_v16', snapshots), 500);
+    }
+
+    createSettingsSnapshot() {
+        if (!this.state.settings.snapshotsEnabled) return;
+
+        const newSnapshot = {
+            timestamp: Date.now(),
+            settings: { ...this.state.settings },
+        };
+
+        const newSnapshots = [newSnapshot, ...this.state.settingsSnapshots].slice(0, 10);
+        this.setState({ settingsSnapshots: newSnapshots });
     }
 
     // --- CORE METHODS ---
@@ -86,15 +110,76 @@ class PersonaChatApp {
         }
     }
 
+    openSettingsModal() {
+        this.initialSettings = { ...this.state.settings };
+        this.setState({ showSettingsModal: true });
+    }
+
+    handleSaveSettings() {
+        const wasRandomDisabled = this.initialSettings && !this.initialSettings.randomFirstMessageEnabled;
+        const isRandomEnabled = this.state.settings.randomFirstMessageEnabled;
+
+        this.setState({ showSettingsModal: false, initialSettings: null });
+
+        if (wasRandomDisabled && isRandomEnabled) {
+            this.scheduleMultipleRandomChats();
+        }
+    }
+
+    handleCancelSettings() {
+        const hasChanges = JSON.stringify(this.initialSettings) !== JSON.stringify(this.state.settings);
+
+        if (hasChanges) {
+            this.showConfirmModal(
+                '변경사항 취소',
+                '저장되지 않은 변경사항이 있습니다. 정말로 취소하시겠습니까?',
+                () => {
+                    if (this.initialSettings) {
+                        this.setState({
+                            settings: this.initialSettings,
+                            showSettingsModal: false,
+                            initialSettings: null,
+                            modal: { isOpen: false, title: '', message: '', onConfirm: null }
+                        });
+                    } else {
+                        this.setState({
+                            showSettingsModal: false,
+                            modal: { isOpen: false, title: '', message: '', onConfirm: null }
+                        });
+                    }
+                }
+            );
+        } else {
+            this.setState({ showSettingsModal: false, initialSettings: null });
+        }
+    }
+
+    handleToggleSnapshots(enabled) {
+        this.setState({ settings: { ...this.state.settings, snapshotsEnabled: enabled } });
+    }
+
+    handleRestoreSnapshot(timestamp) {
+        const snapshot = this.state.settingsSnapshots.find(s => s.timestamp === timestamp);
+        if (snapshot) {
+            this.setState({ settings: snapshot.settings });
+        }
+    }
+
+    handleDeleteSnapshot(timestamp) {
+        const newSnapshots = this.state.settingsSnapshots.filter(s => s.timestamp !== timestamp);
+        this.setState({ settingsSnapshots: newSnapshots });
+    }
+
     async loadAllData() {
         try {
-            const [settings, characters, chatRooms, messages, unreadCounts, userStickers] = await Promise.all([
+            const [settings, characters, chatRooms, messages, unreadCounts, userStickers, settingsSnapshots] = await Promise.all([
                 loadFromLocalStorage('personaChat_settings_v16', {}),
                 loadFromLocalStorage('personaChat_characters_v16', defaultCharacters),
                 loadFromLocalStorage('personaChat_chatRooms_v16', {}),
                 loadFromLocalStorage('personaChat_messages_v16', {}),
                 loadFromLocalStorage('personaChat_unreadCounts_v16', {}),
-                loadFromLocalStorage('personaChat_userStickers_v16', [])
+                loadFromLocalStorage('personaChat_userStickers_v16', []),
+                loadFromLocalStorage('personaChat_settingsSnapshots_v16', [])
             ]);
 
             this.state.settings = {
@@ -114,6 +199,7 @@ class PersonaChatApp {
             this.state.messages = messages;
             this.state.unreadCounts = unreadCounts;
             this.state.userStickers = userStickers;
+            this.state.settingsSnapshots = settingsSnapshots;
 
         } catch (error) {
             console.error('데이터 로드 실패:', error);
@@ -127,26 +213,30 @@ class PersonaChatApp {
         render(this);
 
         if (JSON.stringify(this.oldState.settings) !== JSON.stringify(this.state.settings)) {
-            saveToLocalStorage('personaChat_settings_v16', this.state.settings);
+            this.debouncedSaveSettings(this.state.settings);
             if (this.oldState.settings.fontScale !== this.state.settings.fontScale) {
                 this.applyFontScale();
             }
+            this.createSettingsSnapshot();
         }
         if (this.shouldSaveCharacters || this.oldState.characters !== this.state.characters) {
-            saveToLocalStorage('personaChat_characters_v16', this.state.characters);
+            this.debouncedSaveCharacters(this.state.characters);
             this.shouldSaveCharacters = false;
         }
         if (JSON.stringify(this.oldState.chatRooms) !== JSON.stringify(this.state.chatRooms)) {
-            saveToLocalStorage('personaChat_chatRooms_v16', this.state.chatRooms);
+            this.debouncedSaveChatRooms(this.state.chatRooms);
         }
         if (JSON.stringify(this.oldState.messages) !== JSON.stringify(this.state.messages)) {
-            saveToLocalStorage('personaChat_messages_v16', this.state.messages);
+            this.debouncedSaveMessages(this.state.messages);
         }
         if (JSON.stringify(this.oldState.unreadCounts) !== JSON.stringify(this.state.unreadCounts)) {
-            saveToLocalStorage('personaChat_unreadCounts_v16', this.state.unreadCounts);
+            this.debouncedSaveUnreadCounts(this.state.unreadCounts);
         }
         if (JSON.stringify(this.oldState.userStickers) !== JSON.stringify(this.state.userStickers)) {
-            saveToLocalStorage('personaChat_userStickers_v16', this.state.userStickers);
+            this.debouncedSaveUserStickers(this.state.userStickers);
+        }
+        if (JSON.stringify(this.oldState.settingsSnapshots) !== JSON.stringify(this.state.settingsSnapshots)) {
+            this.debouncedSaveSettingsSnapshots(this.state.settingsSnapshots);
         }
     }
 
@@ -516,42 +606,7 @@ class PersonaChatApp {
         this.setState({ settings: { ...this.state.settings, model } });
     }
 
-    handleSaveSettings() {
-        const apiKey = document.getElementById('settings-api-key').value.trim();
-        const userName = document.getElementById('settings-user-name').value;
-        const userDescription = document.getElementById('settings-user-desc').value;
-        const model = this.state.settings.model;
-        const proactiveChatEnabled = document.getElementById('settings-proactive-toggle').checked;
-        const randomFirstMessageEnabled = document.getElementById('settings-random-first-message-toggle').checked;
-        const randomCharacterCount = parseInt(document.getElementById('settings-random-character-count').value, 10);
-        const randomMessageFrequencyMin = parseInt(document.getElementById('settings-random-frequency-min').value, 10) || 10;
-        const randomMessageFrequencyMax = parseInt(document.getElementById('settings-random-frequency-max').value, 10) || 120;
-        const fontScale = parseFloat(document.getElementById('settings-font-scale').value);
-
-        const wasRandomDisabled = !this.state.settings.randomFirstMessageEnabled;
-        const newSettings = {
-            ...this.state.settings,
-            apiKey,
-            userName,
-            userDescription,
-            model,
-            proactiveChatEnabled,
-            randomFirstMessageEnabled,
-            randomCharacterCount,
-            randomMessageFrequencyMin,
-            randomMessageFrequencyMax,
-            fontScale,
-        };
-
-        this.setState({
-            settings: newSettings,
-            showSettingsModal: false
-        });
-
-        if (wasRandomDisabled && randomFirstMessageEnabled) {
-            this.scheduleMultipleRandomChats();
-        }
-    }
+    
 
     handleSavePrompts() {
         const newPrompts = {
@@ -1248,7 +1303,7 @@ class PersonaChatApp {
     handleDeleteMessage(lastMessageId) {
         this.showConfirmModal(language.modal.messageGroupDeleteConfirm.title, language.modal.messageGroupDeleteConfirm.message, () => {
             const currentMessages = this.state.messages[this.state.selectedChatId] || [];
-            const groupInfo = this.findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
+            const groupInfo = findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
             if (!groupInfo) return;
 
             const updatedMessages = [
@@ -1271,7 +1326,7 @@ class PersonaChatApp {
         const newContent = textarea.value.trim();
 
         const currentMessages = this.state.messages[this.state.selectedChatId] || [];
-        const groupInfo = this.findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
+        const groupInfo = findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
         if (!groupInfo) return;
 
         const originalMessage = currentMessages[groupInfo.startIndex];
@@ -1306,7 +1361,7 @@ class PersonaChatApp {
 
     async handleRerollMessage(lastMessageId) {
         const currentMessages = this.state.messages[this.state.selectedChatId] || [];
-        const groupInfo = this.findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
+        const groupInfo = findMessageGroup(currentMessages, currentMessages.findIndex(msg => msg.id === lastMessageId));
         if (!groupInfo) return;
 
         const truncatedMessages = currentMessages.slice(0, groupInfo.startIndex);

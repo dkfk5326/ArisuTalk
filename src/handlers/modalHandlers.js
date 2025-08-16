@@ -1,8 +1,8 @@
 
 export function handleModalClick(e, app) {
     // Settings Modal
-    if (e.target.closest('#open-settings-modal')) app.setState({ showSettingsModal: true });
-    if (e.target.closest('#close-settings-modal')) app.setState({ showSettingsModal: false });
+    if (e.target.closest('#open-settings-modal')) app.openSettingsModal();
+    if (e.target.closest('#close-settings-modal')) app.handleCancelSettings();
     if (e.target.closest('#save-settings')) app.handleSaveSettings();
 
     // Prompt Modal
@@ -32,7 +32,6 @@ export function handleModalClick(e, app) {
     if (e.target.closest('#modal-cancel')) app.closeModal();
     if (e.target.closest('#modal-confirm')) {
         if (app.state.modal.onConfirm) app.state.modal.onConfirm();
-        app.closeModal();
     }
 
     // User Sticker Panel
@@ -44,11 +43,42 @@ export function handleModalClick(e, app) {
     if (e.target.closest('#restore-data-btn')) document.getElementById('restore-file-input').click();
     if (e.target.closest('#backup-prompts-btn')) app.handleBackupPrompts();
     if (e.target.closest('#restore-prompts-btn')) document.getElementById('restore-prompts-input').click();
+
+    const restoreSnapshotBtn = e.target.closest('.restore-snapshot-btn');
+    if (restoreSnapshotBtn) {
+        const timestamp = Number(restoreSnapshotBtn.dataset.timestamp);
+        app.handleRestoreSnapshot(timestamp);
+    }
+
+    const deleteSnapshotBtn = e.target.closest('.delete-snapshot-btn');
+    if (deleteSnapshotBtn) {
+        const timestamp = Number(deleteSnapshotBtn.dataset.timestamp);
+        app.handleDeleteSnapshot(timestamp);
+    }
 }
 
 export function handleModalInput(e, app) {
     if (e.target.id === 'settings-font-scale') {
-        app.setState({ settings: { ...app.state.settings, fontScale: parseFloat(e.target.value) } });
+        const newScale = parseFloat(e.target.value);
+        if (app.state.settings.fontScale !== newScale) {
+            app.setState({ settings: { ...app.state.settings, fontScale: newScale } });
+        }
+    } else if (e.target.id === 'settings-api-key') {
+        app.setState({ settings: { ...app.state.settings, apiKey: e.target.value } });
+    } else if (e.target.id === 'settings-user-name') {
+        app.setState({ settings: { ...app.state.settings, userName: e.target.value } });
+    } else if (e.target.id === 'settings-user-desc') {
+        app.setState({ settings: { ...app.state.settings, userDescription: e.target.value } });
+    } else if (e.target.id === 'settings-proactive-toggle') {
+        app.setState({ settings: { ...app.state.settings, proactiveChatEnabled: e.target.checked } });
+    } else if (e.target.id === 'settings-random-first-message-toggle') {
+        app.setState({ settings: { ...app.state.settings, randomFirstMessageEnabled: e.target.checked } });
+    } else if (e.target.id === 'settings-random-character-count') {
+        app.setState({ settings: { ...app.state.settings, randomCharacterCount: parseInt(e.target.value, 10) } });
+    } else if (e.target.id === 'settings-random-frequency-min') {
+        app.setState({ settings: { ...app.state.settings, randomMessageFrequencyMin: parseInt(e.target.value, 10) } });
+    } else if (e.target.id === 'settings-random-frequency-max') {
+        app.setState({ settings: { ...app.state.settings, randomMessageFrequencyMax: parseInt(e.target.value, 10) } });
     }
     if (e.target.id === 'settings-random-character-count') {
         const count = e.target.value;
@@ -68,4 +98,9 @@ export function handleModalChange(e, app) {
     }
     if (e.target.id === 'restore-file-input') app.handleRestore(e);
     if (e.target.id === 'restore-prompts-input') app.handleRestorePrompts(e);
+    if (e.target.id === 'settings-snapshots-toggle') {
+        const optionsDiv = document.getElementById('snapshots-list');
+        if (optionsDiv) optionsDiv.style.display = e.target.checked ? 'block' : 'none';
+        app.handleToggleSnapshots(e.target.checked);
+    }
 }

@@ -1,39 +1,40 @@
-
-export function findMessageGroup(messages, index) {
-    const message = messages[index];
-    if (!message) return null;
-
-    let startIndex = index;
-    for (let i = index - 1; i >= 0; i--) {
-        if (messages[i].isMe === message.isMe && (new Date(messages[i + 1].id) - new Date(messages[i].id) < 60000)) {
-            startIndex = i;
-        } else {
-            break;
-        }
-    }
-
-    let endIndex = index;
-    for (let i = index + 1; i < messages.length; i++) {
-        if (messages[i].isMe === message.isMe && (new Date(messages[i].id) - new Date(messages[i - 1].id) < 60000)) {
-            endIndex = i;
-        } else {
-            break;
-        }
-    }
-
-    return {
-        startIndex: startIndex,
-        endIndex: endIndex,
-        firstMessageId: messages[startIndex].id,
-        lastMessageId: messages[endIndex].id
+export function debounce(func, delay) {
+    let timeout;
+    return function(...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), delay);
     };
 }
 
-export function formatDateSeparator(date) {
-    return date.toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        weekday: 'long'
-    });
+export function findMessageGroup(messages, targetIndex) {
+    if (targetIndex < 0 || targetIndex >= messages.length) {
+        return null;
+    }
+
+    const targetSender = messages[targetIndex].sender;
+    let startIndex = targetIndex;
+    let endIndex = targetIndex;
+
+    // Find the start of the group
+    while (startIndex > 0 && messages[startIndex - 1].sender === targetSender) {
+        startIndex--;
+    }
+
+    // Find the end of the group
+    while (endIndex < messages.length - 1 && messages[endIndex + 1].sender === targetSender) {
+        endIndex++;
+    }
+
+    return {
+        startIndex,
+        endIndex,
+        messages: messages.slice(startIndex, endIndex + 1),
+    };
+}
+
+export function formatDateSeparator(dateString) {
+    const date = new Date(dateString);
+    const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
+    return date.toLocaleDateString('ko-KR', options);
 }
