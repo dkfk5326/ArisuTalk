@@ -89,8 +89,8 @@ class PersonaChatApp {
 
     // --- CORE METHODS ---
     async init() {
-        this.applyFontScale();
         await this.loadAllData();
+        this.applyFontScale();
         await this.migrateChatData();
         
         render(this);
