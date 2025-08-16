@@ -214,7 +214,7 @@ function renderMessages(app) {
                 const selectedChatRoom = app.getCurrentChatRoom();
                 const character = selectedChatRoom ? app.state.characters.find(c => c.id === selectedChatRoom.characterId) : null;
                 stickerData = character?.stickers?.find(s => {
-                    if (s.id == msg.stickerId) return true;
+                    if (s.id === Number(msg.stickerId)) return true;
                     if (s.name === msg.stickerId) return true;
                     const baseFileName = s.name.replace(/\.[^/.]+$/, "");
                     const searchFileName = String(msg.stickerId).replace(/\.[^/.]+$/, "");
