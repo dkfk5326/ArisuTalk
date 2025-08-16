@@ -109,7 +109,7 @@ export function getLocalStorageUsage() {
   return totalSize;
 }
 
-export function checkStorageSpace(newData = "", existingKey = "") {
+export function getLocalStorageFallbackUsage(newData = "", existingKey = "") {
   const appKeys = [
     "personaChat_settings_v16",
     "personaChat_characters_v16",
