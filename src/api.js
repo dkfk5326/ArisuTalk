@@ -1,4 +1,4 @@
-export async function callGeminiAPI(apiKey, model, userName, userDescription, character, history, prompts, isProactive = false, forceSummary = false) {
+export async function callGeminiAPI({ apiKey, model, userName, userDescription, character, history, prompts, isProactive = false, forceSummary = false }) {
     let contents = [];
     for (const msg of history) {
         const role = msg.isMe ? "user" : "model";
@@ -201,7 +201,7 @@ ${guidelines.replace(/{character.name}/g, character.name).replace('{timeContext}
     }
 }
 
-export async function callGeminiAPIForProfile(apiKey, model, userName, userDescription, profileCreationPrompt) {
+export async function callGeminiAPIForProfile({ apiKey, model, userName, userDescription, profileCreationPrompt }) {
     const profilePrompt = profileCreationPrompt
         .replace('{userName}', userName)
         .replace('{userDescription}', userDescription);

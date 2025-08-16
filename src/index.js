@@ -1339,17 +1339,17 @@ class PersonaChatApp {
       return;
     }
 
-    const response = await callGeminiAPI(
-      this.state.settings.apiKey,
-      this.state.settings.model,
-      this.state.settings.userName,
-      this.state.settings.userDescription,
-      character,
-      history,
-      this.state.settings.prompts,
-      isProactive,
-      forceSummary
-    );
+    const response = await callGeminiAPI({
+      apiKey: this.state.settings.apiKey,
+      model: this.state.settings.model,
+      userName: this.state.settings.userName,
+      userDescription: this.state.settings.userDescription,
+      character: character,
+      history: history,
+      prompts: this.state.settings.prompts,
+      isProactive: isProactive,
+      forceSummary: forceSummary
+    });
 
     if (response.newMemory && response.newMemory.trim() !== "") {
       const charIndex = this.state.characters.findIndex(
@@ -1522,13 +1522,13 @@ class PersonaChatApp {
     }
 
     try {
-      const profile = await callGeminiAPIForProfile(
-        apiKey,
-        model,
-        userName,
-        userDescription,
-        this.state.settings.prompts.profile_creation
-      );
+      const profile = await callGeminiAPIForProfile({
+        apiKey: apiKey,
+        model: model,
+        userName: userName,
+        userDescription: userDescription,
+        profileCreationPrompt: this.state.settings.prompts.profile_creation
+      });
       if (profile.error) {
         console.error("Failed to generate profile:", profile.error);
         return;
@@ -1569,17 +1569,17 @@ class PersonaChatApp {
         stickers: [],
       };
 
-      const response = await callGeminiAPI(
-        apiKey,
-        model,
-        userName,
-        userDescription,
-        tempCharacter,
-        [],
-        this.state.settings.prompts,
-        true,
-        false
-      );
+      const response = await callGeminiAPI({
+        apiKey: apiKey,
+        model: model,
+        userName: userName,
+        userDescription: userDescription,
+        character: tempCharacter,
+        history: [],
+        prompts: this.state.settings.prompts,
+        isProactive: true,
+        forceSummary: false
+      });
       if (response.error) {
         console.error("Failed to get first message from API:", response.error);
         return;
