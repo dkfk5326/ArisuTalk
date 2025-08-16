@@ -34,10 +34,10 @@ function renderCharacterItem(app, char) {
                     <button onclick="window.personaApp.createNewChatRoomForCharacter(${char.id}); event.stopPropagation();" class="p-1 bg-gray-700 hover:bg-blue-600 rounded text-gray-300 hover:text-white transition-colors" title="새 채팅방">
                         <i data-lucide="plus" class="w-3 h-3"></i>
                     </button>
-                    <button onclick="window.personaApp.editCharacter(${char.id}); event.stopPropagation();" class="p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 hover:text-white transition-colors" title="수정">
+                    <button data-id="${char.id}" class="edit-character-btn p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 hover:text-white transition-colors" title="수정">
                         <i data-lucide="edit-3" class="w-3 h-3"></i>
                     </button>
-                    <button onclick="window.personaApp.deleteCharacter(${char.id}); event.stopPropagation();" class="p-1 bg-gray-700 hover:bg-red-600 rounded text-gray-300 hover:text-white transition-colors" title="삭제">
+                    <button data-id="${char.id}" class="delete-character-btn p-1 bg-gray-700 hover:bg-red-600 rounded text-gray-300 hover:text-white transition-colors" title="삭제">
                         <i data-lucide="trash-2" class="w-3 h-3"></i>
                     </button>
                 </div>

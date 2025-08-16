@@ -168,6 +168,9 @@ class PersonaChatApp {
       this.initialSettings && !this.initialSettings.randomFirstMessageEnabled;
     const isRandomEnabled = this.state.settings.randomFirstMessageEnabled;
 
+    // Create a snapshot of the settings when the user explicitly saves.
+    this.createSettingsSnapshot();
+
     this.setState({ showSettingsModal: false, initialSettings: null });
 
     if (wasRandomDisabled && isRandomEnabled) {
@@ -289,7 +292,6 @@ class PersonaChatApp {
       if (this.oldState.settings.fontScale !== this.state.settings.fontScale) {
         this.applyFontScale();
       }
-      this.createSettingsSnapshot();
     }
     if (
       this.shouldSaveCharacters ||
@@ -1173,6 +1175,8 @@ class PersonaChatApp {
           unreadCounts: newUnreadCounts,
           selectedChatId: newSelectedChatId,
           expandedCharacterId: null,
+          // Close the confirmation modal after deletion is complete
+          modal: { isOpen: false, title: "", message: "", onConfirm: null },
         });
       }
     );

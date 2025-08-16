@@ -1,4 +1,6 @@
 
+import { debounce } from '../utils.js';
+
 export function handleModalClick(e, app) {
     // Settings Modal
     if (e.target.closest('#open-settings-modal')) app.openSettingsModal();
@@ -57,31 +59,38 @@ export function handleModalClick(e, app) {
     }
 }
 
-const settingsUpdaters = {  
-    'settings-font-scale': (app, value) => ({ fontScale: parseFloat(value) }),  
-    'settings-api-key': (app, value) => ({ apiKey: value }),  
-    'settings-user-name': (app, value) => ({ userName: value }),  
-    'settings-user-desc': (app, value) => ({ userDescription: value }),  
-    'settings-proactive-toggle': (app, checked) => ({ proactiveChatEnabled: checked }),  
-    'settings-random-first-message-toggle': (app, checked) => ({ randomFirstMessageEnabled: checked }),  
-    'settings-random-character-count': (app, value) => ({ randomCharacterCount: parseInt(value, 10) }),  
-    'settings-random-frequency-min': (app, value) => ({ randomMessageFrequencyMin: parseInt(value, 10) }),  
-    'settings-random-frequency-max': (app, value) => ({ randomMessageFrequencyMax: parseInt(value, 10) }),  
-};  
+// Debounced function to update settings with a 500ms delay.
+// This prevents the UI from re-rendering on every keystroke, improving user experience.
+const debouncedUpdateSettings = debounce((app, newSetting) => {
+    app.setState({ settings: { ...app.state.settings, ...newSetting } });
+}, 500);
 
-export function handleModalInput(e, app) {  
-    const updater = settingsUpdaters[e.target.id];  
-    if (updater) {  
-        const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;  
-        const newSetting = updater(app, value);  
-        app.setState({ settings: { ...app.state.settings, ...newSetting } });  
-    }  
+const settingsUpdaters = {
+    'settings-font-scale': (app, value) => ({ fontScale: parseFloat(value) }),
+    'settings-api-key': (app, value) => ({ apiKey: value }),
+    'settings-user-name': (app, value) => ({ userName: value }),
+    'settings-user-desc': (app, value) => ({ userDescription: value }),
+    'settings-proactive-toggle': (app, checked) => ({ proactiveChatEnabled: checked }),
+    'settings-random-first-message-toggle': (app, checked) => ({ randomFirstMessageEnabled: checked }),
+    'settings-random-character-count': (app, value) => ({ randomCharacterCount: parseInt(value, 10) }),
+    'settings-random-frequency-min': (app, value) => ({ randomMessageFrequencyMin: parseInt(value, 10) }),
+    'settings-random-frequency-max': (app, value) => ({ randomMessageFrequencyMax: parseInt(value, 10) }),
+};
 
-    if (e.target.id === 'settings-random-character-count') {  
-        const count = e.target.value;  
-        const label = document.getElementById('random-character-count-label');  
-        if (label) label.textContent = `${count}명`;  
-    }  
+export function handleModalInput(e, app) {
+    const updater = settingsUpdaters[e.target.id];
+    if (updater) {
+        const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+        const newSetting = updater(app, value);
+        // Call the debounced function to update settings
+        debouncedUpdateSettings(app, newSetting);
+    }
+
+    if (e.target.id === 'settings-random-character-count') {
+        const count = e.target.value;
+        const label = document.getElementById('random-character-count-label');
+        if (label) label.textContent = `${count}명`;
+    }
 }
 
 export function handleModalChange(e, app) {

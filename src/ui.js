@@ -30,34 +30,29 @@ export function render(app) {
     const newState = app.state;
     const isFirstRender = !app.oldState;
 
-    // 조건부 렌더링으로 불필요한 DOM 업데이트 최소화
+    // Conditionally render the sidebar to minimize DOM updates
     if (isFirstRender || shouldUpdateSidebar(oldState, newState)) {
         renderSidebar(app);
     }
 
+    // Conditionally render the main chat to minimize DOM updates
     if (isFirstRender || shouldUpdateMainChat(oldState, newState)) {
         renderMainChat(app);
     }
 
-    if (newState.showSettingsModal && !oldState.showSettingsModal) {
+    // Conditionally render modals to minimize DOM updates
+    if (isFirstRender || shouldUpdateModals(oldState, newState)) {
         renderModals(app);
-    } else if (oldState.showSettingsModal && !newState.showSettingsModal) {
-        renderModals(app);
-    } else if (newState.showSettingsModal && oldState.showSettingsModal) {
-        if (JSON.stringify(oldState.settingsSnapshots) !== JSON.stringify(newState.settingsSnapshots)) {
-            updateSnapshotList(app);
-        } else if (shouldUpdateModals(oldState, newState)) {
-            renderModals(app);
-        }
     }
 
     lucide.createIcons();
     app.scrollToBottom();
 }
 
-// --- 조건부 렌더링 헬퍼 함수 ---
+// --- RENDER HELPER FUNCTIONS ---
 
 function shouldUpdateSidebar(oldState, newState) {
+    // This function checks if any state related to the sidebar has changed
     return (
         oldState.sidebarCollapsed !== newState.sidebarCollapsed ||
         oldState.searchQuery !== newState.searchQuery ||
@@ -71,6 +66,7 @@ function shouldUpdateSidebar(oldState, newState) {
 }
 
 function shouldUpdateMainChat(oldState, newState) {
+    // This function checks if any state related to the main chat has changed
     return (
         oldState.selectedChatId !== newState.selectedChatId ||
         oldState.editingMessageId !== newState.editingMessageId ||
@@ -86,14 +82,21 @@ function shouldUpdateMainChat(oldState, newState) {
 }
 
 function shouldUpdateModals(oldState, newState) {
+    // This function checks if any state related to modals has changed
+
+    // If the settings modal is open, we don't re-render it just for settings changes.
+    // This prevents the modal from resetting while the user is typing in input fields.
+    if (newState.showSettingsModal && oldState.showSettingsModal) {
+        // Only re-render if snapshots change, otherwise keep the modal stable.
+        return JSON.stringify(oldState.settingsSnapshots) !== JSON.stringify(newState.settingsSnapshots);
+    }
+
     return (
         oldState.showSettingsModal !== newState.showSettingsModal ||
         oldState.showCharacterModal !== newState.showCharacterModal ||
         oldState.showPromptModal !== newState.showPromptModal ||
         oldState.modal.isOpen !== newState.modal.isOpen ||
-        (newState.showSettingsModal && JSON.stringify(oldState.settings) !== JSON.stringify(newState.settings)) ||
         (newState.showCharacterModal && JSON.stringify(oldState.editingCharacter) !== JSON.stringify(newState.editingCharacter)) ||
-        (newState.showPromptModal && JSON.stringify(oldState.settings.prompts) !== JSON.stringify(newState.settings.prompts)) ||
-        (newState.showSettingsModal && JSON.stringify(oldState.settingsSnapshots) !== JSON.stringify(newState.settingsSnapshots))
+        (newState.showPromptModal && JSON.stringify(oldState.settings.prompts) !== JSON.stringify(newState.settings.prompts))
     );
 }
