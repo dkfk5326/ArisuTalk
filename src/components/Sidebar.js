@@ -4,7 +4,7 @@ import { renderAvatar } from './Avatar.js';
 
 function renderCharacterItem(app, char) {
     const chatRooms = app.state.chatRooms[char.id] || [];
-    const isExpanded = app.state.expandedCharacterId === parseInt(char.id);
+    const isExpanded = app.state.expandedCharacterId === Number(char.id);
     
     let lastMessage = null;
     let totalUnreadCount = 0;
@@ -45,7 +45,7 @@ function renderCharacterItem(app, char) {
                     ${renderAvatar(char, 'md')}
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center justify-between mb-1">
-                            <h3 class="font-semibold text-white text-sm truncate">${char.name}</h3>
+                            <h3 class="font-semibold text-white text-sm truncate">${char.name || 'Unknown Character'}</h3>
                             <div class="flex items-center gap-2">
                                 ${totalUnreadCount > 0 ? `<span class="bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full leading-none">${totalUnreadCount}</span>` : ''}
                                 <span class="text-xs text-gray-500 shrink-0">${lastMessage?.time || ''}</span>

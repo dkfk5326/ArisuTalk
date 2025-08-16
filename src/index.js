@@ -106,7 +106,10 @@ class PersonaChatApp {
                 }
             };
 
-            this.state.characters = characters;
+            this.state.characters = characters.map(char => ({
+                ...char,
+                id: Number(char.id)
+            }));
             this.state.chatRooms = chatRooms;
             this.state.messages = messages;
             this.state.unreadCounts = unreadCounts;
@@ -236,37 +239,38 @@ class PersonaChatApp {
     }
 
     createNewChatRoom(characterId, chatName = '새 채팅') {
-        const newChatRoomId = `${characterId}_${Date.now()}_${Math.random()}`;
+        const numericCharacterId = Number(characterId);
+        const newChatRoomId = `${numericCharacterId}_${Date.now()}_${Math.random()}`;
         const newChatRoom = {
             id: newChatRoomId,
-            characterId: characterId,
+            characterId: numericCharacterId,
             name: chatName,
             createdAt: Date.now(),
             lastActivity: Date.now()
         };
-        
-        const characterChatRooms = [...(this.state.chatRooms[characterId] || [])];
+
+        const characterChatRooms = [...(this.state.chatRooms[numericCharacterId] || [])];
         characterChatRooms.unshift(newChatRoom);
-        
-        const newChatRooms = { ...this.state.chatRooms, [characterId]: characterChatRooms };
+
+        const newChatRooms = { ...this.state.chatRooms, [numericCharacterId]: characterChatRooms };
         const newMessages = { ...this.state.messages, [newChatRoomId]: [] };
-        
+
         this.setState({
             chatRooms: newChatRooms,
             messages: newMessages
         });
-        
+
         return newChatRoomId;
     }
 
     toggleCharacterExpansion(characterId) {
-        const numericCharacterId = parseInt(characterId);
+        const numericCharacterId = Number(characterId);
         const newExpandedId = this.state.expandedCharacterId === numericCharacterId ? null : numericCharacterId;
         this.setState({ expandedCharacterId: newExpandedId });
     }
 
     createNewChatRoomForCharacter(characterId) {
-        const numericCharacterId = parseInt(characterId);
+        const numericCharacterId = Number(characterId);
         const newChatRoomId = this.createNewChatRoom(numericCharacterId);
         this.selectChatRoom(newChatRoomId);
         this.setState({ expandedCharacterId: numericCharacterId });
@@ -275,7 +279,7 @@ class PersonaChatApp {
     selectChatRoom(chatRoomId) {
         const newUnreadCounts = { ...this.state.unreadCounts };
         delete newUnreadCounts[chatRoomId];
-        
+
         this.setState({
             selectedChatId: chatRoomId,
             unreadCounts: newUnreadCounts,
@@ -285,7 +289,7 @@ class PersonaChatApp {
     }
 
     editCharacter(characterId) {
-        const numericCharacterId = parseInt(characterId);
+        const numericCharacterId = Number(characterId);
         const character = this.state.characters.find(c => c.id === numericCharacterId);
         if (character) {
             this.openEditCharacterModal(character);
@@ -293,7 +297,7 @@ class PersonaChatApp {
     }
 
     deleteCharacter(characterId) {
-        const numericCharacterId = parseInt(characterId);
+        const numericCharacterId = Number(characterId);
         this.handleDeleteCharacter(numericCharacterId);
     }
 
@@ -857,38 +861,40 @@ class PersonaChatApp {
         } else {
             const newCharacter = { id: Date.now(), ...characterData, messageCountSinceLastSummary: 0, proactiveEnabled: true, media: [], stickers: [] };
             const newCharacters = [newCharacter, ...this.state.characters];
-            const newMessages = { ...this.state.messages, [newCharacter.id]: [] };
+            // Create a default chat room for the new character and get its ID
+            const newChatRoomId = this.createNewChatRoom(newCharacter.id);
             this.shouldSaveCharacters = true;
             this.setState({
                 characters: newCharacters,
-                messages: newMessages,
-                selectedChatId: newCharacter.id
+                // messages are already updated by createNewChatRoom
+                selectedChatId: newChatRoomId // Set selectedChatId to the new chat room's ID
             });
         }
         this.closeCharacterModal();
     }
 
     handleDeleteCharacter(characterId) {
+        const numericCharacterId = Number(characterId);
         this.showConfirmModal(
             language.modal.characterDeleteConfirm.title, language.modal.characterDeleteConfirm.message,
             () => {
-                const newCharacters = this.state.characters.filter(c => c.id !== characterId);
+                const newCharacters = this.state.characters.filter(c => c.id !== numericCharacterId);
                 const newMessages = { ...this.state.messages };
                 const newChatRooms = { ...this.state.chatRooms };
                 const newUnreadCounts = { ...this.state.unreadCounts };
                 
-                const characterChatRooms = this.state.chatRooms[characterId] || [];
+                const characterChatRooms = this.state.chatRooms[numericCharacterId] || [];
                 characterChatRooms.forEach(chatRoom => {
                     delete newMessages[chatRoom.id];
                     delete newUnreadCounts[chatRoom.id];
                 });
                 
-                delete newChatRooms[characterId];
-                delete newMessages[characterId];
+                delete newChatRooms[numericCharacterId];
+                // Removed: delete newMessages[characterId]; // Messages are keyed by chatRoomId, not characterId
 
                 let newSelectedChatId = this.state.selectedChatId;
                 const selectedChatRoom = this.getCurrentChatRoom();
-                if (selectedChatRoom && selectedChatRoom.characterId === characterId) {
+                if (selectedChatRoom && selectedChatRoom.characterId === numericCharacterId) {
                     newSelectedChatId = this.getFirstAvailableChatRoom();
                 }
 
@@ -1166,10 +1172,23 @@ class PersonaChatApp {
 
         try {
             const profile = await callGeminiAPIForProfile(apiKey, model, userName, userDescription, this.state.settings.prompts.profile_creation);
-            if (profile.error) throw new Error(profile.error);
+            if (profile.error) {
+                console.error("Failed to generate profile:", profile.error);
+                return;
+            }
+
+            // Validate profile data
+            if (!profile.name || typeof profile.name !== 'string' || profile.name.trim() === '') {
+                console.warn("Generated profile has invalid or empty name:", profile);
+                return;
+            }
+            if (!profile.prompt || typeof profile.prompt !== 'string' || profile.prompt.trim() === '') {
+                console.warn("Generated profile has invalid or empty prompt:", profile);
+                return;
+            }
 
             const tempCharacter = {
-                id: Date.now() + Math.random(),
+                id: Date.now(),
                 name: profile.name,
                 prompt: profile.prompt,
                 avatar: null,
@@ -1181,12 +1200,19 @@ class PersonaChatApp {
                 proactiveEnabled: true,
                 media: [],
                 messageCountSinceLastSummary: 0,
-                isRandom: true
+                isRandom: true,
+                stickers: []
             };
 
             const response = await callGeminiAPI(apiKey, model, userName, userDescription, tempCharacter, [], this.state.settings.prompts, true, false);
-            if (response.error) throw new Error(response.error);
-            if (!response.messages || response.messages.length === 0) throw new Error("API did not return a first message.");
+            if (response.error) {
+                console.error("Failed to get first message from API:", response.error);
+                return;
+            }
+            if (!response.messages || !Array.isArray(response.messages) || response.messages.length === 0) {
+                console.warn("API did not return valid first messages:", response);
+                return;
+            }
 
             const firstMessages = response.messages.map(msgPart => ({
                 id: Date.now() + Math.random(),
@@ -1198,13 +1224,19 @@ class PersonaChatApp {
                 type: 'text',
             }));
 
+            // Create a chat room for the new random character
+            const newChatRoomId = this.createNewChatRoom(tempCharacter.id, '랜덤 채팅'); // This will update this.state.chatRooms and initialize messages[newChatRoomId] = []
+
+            // Now, add the first messages to this newly created chat room
+            const updatedMessagesForNewChatRoom = [...firstMessages];
+            const newMessagesState = { ...this.state.messages, [newChatRoomId]: updatedMessagesForNewChatRoom };
+
             const newCharacters = [tempCharacter, ...this.state.characters];
-            const newMessages = { ...this.state.messages, [tempCharacter.id]: firstMessages };
-            const newUnreadCounts = { ...this.state.unreadCounts, [tempCharacter.id]: firstMessages.length };
+            const newUnreadCounts = { ...this.state.unreadCounts, [newChatRoomId]: firstMessages.length }; // Key by chatRoomId
 
             this.setState({
                 characters: newCharacters,
-                messages: newMessages,
+                messages: newMessagesState, // Use the updated messages state
                 unreadCounts: newUnreadCounts
             });
 
