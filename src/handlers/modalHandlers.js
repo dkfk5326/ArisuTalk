@@ -57,34 +57,31 @@ export function handleModalClick(e, app) {
     }
 }
 
-export function handleModalInput(e, app) {
-    if (e.target.id === 'settings-font-scale') {
-        const newScale = parseFloat(e.target.value);
-        if (app.state.settings.fontScale !== newScale) {
-            app.setState({ settings: { ...app.state.settings, fontScale: newScale } });
-        }
-    } else if (e.target.id === 'settings-api-key') {
-        app.setState({ settings: { ...app.state.settings, apiKey: e.target.value } });
-    } else if (e.target.id === 'settings-user-name') {
-        app.setState({ settings: { ...app.state.settings, userName: e.target.value } });
-    } else if (e.target.id === 'settings-user-desc') {
-        app.setState({ settings: { ...app.state.settings, userDescription: e.target.value } });
-    } else if (e.target.id === 'settings-proactive-toggle') {
-        app.setState({ settings: { ...app.state.settings, proactiveChatEnabled: e.target.checked } });
-    } else if (e.target.id === 'settings-random-first-message-toggle') {
-        app.setState({ settings: { ...app.state.settings, randomFirstMessageEnabled: e.target.checked } });
-    } else if (e.target.id === 'settings-random-character-count') {
-        app.setState({ settings: { ...app.state.settings, randomCharacterCount: parseInt(e.target.value, 10) } });
-    } else if (e.target.id === 'settings-random-frequency-min') {
-        app.setState({ settings: { ...app.state.settings, randomMessageFrequencyMin: parseInt(e.target.value, 10) } });
-    } else if (e.target.id === 'settings-random-frequency-max') {
-        app.setState({ settings: { ...app.state.settings, randomMessageFrequencyMax: parseInt(e.target.value, 10) } });
-    }
-    if (e.target.id === 'settings-random-character-count') {
-        const count = e.target.value;
-        const label = document.getElementById('random-character-count-label');
-        if (label) label.textContent = `${count}명`;
-    }
+const settingsUpdaters = {  
+    'settings-font-scale': (app, value) => ({ fontScale: parseFloat(value) }),  
+    'settings-api-key': (app, value) => ({ apiKey: value }),  
+    'settings-user-name': (app, value) => ({ userName: value }),  
+    'settings-user-desc': (app, value) => ({ userDescription: value }),  
+    'settings-proactive-toggle': (app, checked) => ({ proactiveChatEnabled: checked }),  
+    'settings-random-first-message-toggle': (app, checked) => ({ randomFirstMessageEnabled: checked }),  
+    'settings-random-character-count': (app, value) => ({ randomCharacterCount: parseInt(value, 10) }),  
+    'settings-random-frequency-min': (app, value) => ({ randomMessageFrequencyMin: parseInt(value, 10) }),  
+    'settings-random-frequency-max': (app, value) => ({ randomMessageFrequencyMax: parseInt(value, 10) }),  
+};  
+
+export function handleModalInput(e, app) {  
+    const updater = settingsUpdaters[e.target.id];  
+    if (updater) {  
+        const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;  
+        const newSetting = updater(app, value);  
+        app.setState({ settings: { ...app.state.settings, ...newSetting } });  
+    }  
+
+    if (e.target.id === 'settings-random-character-count') {  
+        const count = e.target.value;  
+        const label = document.getElementById('random-character-count-label');  
+        if (label) label.textContent = `${count}명`;  
+    }  
 }
 
 export function handleModalChange(e, app) {
