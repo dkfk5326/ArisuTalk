@@ -1,3 +1,5 @@
+const API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
 export async function callGeminiAPI({ apiKey, model, userName, userDescription, character, history, prompts, isProactive = false, forceSummary = false }) {
     let contents = [];
     for (const msg of history) {
@@ -167,7 +169,7 @@ ${guidelines.replace(/{character.name}/g, character.name).replace('{timeContext}
     };
 
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        const response = await fetch(`${API_BASE_URL}/${model}:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -236,7 +238,7 @@ export async function callGeminiAPIForProfile({ apiKey, model, userName, userDes
     };
 
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        const response = await fetch(`${API_BASE_URL}/${model}:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
