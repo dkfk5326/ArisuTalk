@@ -6,7 +6,7 @@ import {
   getLocalStorageUsage,
   getLocalStorageFallbackUsage,
 } from "./storage.js";
-import { callGeminiAPI, callGeminiAPIForProfile } from "./api.js";
+import { GeminiClient } from "./api/gemini.js";
 import { render } from "./ui.js";
 import {
   handleSidebarClick,
@@ -1385,9 +1385,8 @@ class PersonaChatApp {
       return;
     }
 
-    const response = await callGeminiAPI({
-      apiKey: this.state.settings.apiKey,
-      model: this.state.settings.model,
+    const geminiClient = new GeminiClient(this.state.settings.apiKey, this.state.settings.model);
+    const response = await geminiClient.generateContent({
       userName: this.state.settings.userName,
       userDescription: this.state.settings.userDescription,
       character: character,
@@ -1568,9 +1567,8 @@ class PersonaChatApp {
     }
 
     try {
-      const profile = await callGeminiAPIForProfile({
-        apiKey: apiKey,
-        model: model,
+      const geminiClient = new GeminiClient(apiKey, model);
+      const profile = await geminiClient.generateProfile({
         userName: userName,
         userDescription: userDescription,
         profileCreationPrompt: this.state.settings.prompts.profile_creation
@@ -1615,9 +1613,7 @@ class PersonaChatApp {
         stickers: [],
       };
 
-      const response = await callGeminiAPI({
-        apiKey: apiKey,
-        model: model,
+      const response = await geminiClient.generateContent({
         userName: userName,
         userDescription: userDescription,
         character: tempCharacter,
