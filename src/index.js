@@ -1,8 +1,8 @@
 import { language } from "./language.js";
 import { defaultPrompts, defaultCharacters } from "./defauts.js";
 import {
-  loadFromLocalStorage,
-  saveToLocalStorage,
+  loadFromBrowserStorage,
+  saveToBrowserStorage,
   getLocalStorageUsage,
   getLocalStorageFallbackUsage,
 } from "./storage.js";
@@ -86,35 +86,35 @@ class PersonaChatApp {
     this.initialSettings = null;
 
     this.debouncedSaveSettings = debounce(
-      (settings) => saveToLocalStorage("personaChat_settings_v16", settings),
+      (settings) => saveToBrowserStorage("personaChat_settings_v16", settings),
       500
     );
     this.debouncedSaveCharacters = debounce(
       (characters) =>
-        saveToLocalStorage("personaChat_characters_v16", characters),
+        saveToBrowserStorage("personaChat_characters_v16", characters),
       500
     );
     this.debouncedSaveChatRooms = debounce(
-      (chatRooms) => saveToLocalStorage("personaChat_chatRooms_v16", chatRooms),
+      (chatRooms) => saveToBrowserStorage("personaChat_chatRooms_v16", chatRooms),
       500
     );
     this.debouncedSaveMessages = debounce(
-      (messages) => saveToLocalStorage("personaChat_messages_v16", messages),
+      (messages) => saveToBrowserStorage("personaChat_messages_v16", messages),
       500
     );
     this.debouncedSaveUnreadCounts = debounce(
       (unreadCounts) =>
-        saveToLocalStorage("personaChat_unreadCounts_v16", unreadCounts),
+        saveToBrowserStorage("personaChat_unreadCounts_v16", unreadCounts),
       500
     );
     this.debouncedSaveUserStickers = debounce(
       (userStickers) =>
-        saveToLocalStorage("personaChat_userStickers_v16", userStickers),
+        saveToBrowserStorage("personaChat_userStickers_v16", userStickers),
       500
     );
     this.debouncedSaveSettingsSnapshots = debounce(
       (snapshots) =>
-        saveToLocalStorage("personaChat_settingsSnapshots_v16", snapshots),
+        saveToBrowserStorage("personaChat_settingsSnapshots_v16", snapshots),
       500
     );
   }
@@ -425,7 +425,7 @@ class PersonaChatApp {
       messages: newMessages,
     });
 
-    saveToLocalStorage("personaChat_migration_v16", true);
+    saveToBrowserStorage("personaChat_migration_v16", true);
   }
 
   getFirstAvailableChatRoom() {
@@ -2188,27 +2188,27 @@ class PersonaChatApp {
             language.modal.restoreConfirm.title,
             language.modal.restoreConfirm.message,
             () => {
-              saveToLocalStorage(
+              saveToBrowserStorage(
                 "personaChat_settings_v16",
                 backupData.settings
               );
-              saveToLocalStorage(
+              saveToBrowserStorage(
                 "personaChat_characters_v16",
                 backupData.characters
               );
-              saveToLocalStorage(
+              saveToBrowserStorage(
                 "personaChat_messages_v16",
                 backupData.messages
               );
-              saveToLocalStorage(
+              saveToBrowserStorage(
                 "personaChat_unreadCounts_v16",
                 backupData.unreadCounts
               );
-              saveToLocalStorage(
+              saveToBrowserStorage(
                 "personaChat_chatRooms_v16",
                 backupData.chatRooms || {}
               );
-              saveToLocalStorage(
+              saveToBrowserStorage(
                 "personaChat_userStickers_v16",
                 backupData.userStickers || []
               );

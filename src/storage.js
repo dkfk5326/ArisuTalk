@@ -1,4 +1,4 @@
-export async function loadFromLocalStorage(key, defaultValue) {
+export async function loadFromBrowserStorage(key, defaultValue) {
   try {
     const value = await loadFromIndexedDB(key);
     if (value !== null) {
@@ -17,7 +17,7 @@ export async function loadFromLocalStorage(key, defaultValue) {
   }
 }
 
-export async function saveToLocalStorage(key, value) {
+export async function saveToBrowserStorage(key, value) {
   try {
     await saveToIndexedDB(key, value);
   } catch (error) {
