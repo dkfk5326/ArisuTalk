@@ -2,6 +2,19 @@
 import { debounce } from '../utils.js';
 
 export function handleModalClick(e, app) {
+    const summary = e.target.closest('details > summary');
+    if (summary) {
+        const details = summary.parentElement;
+        if (details.closest('#settings-modal-content')) {
+            const section = details.dataset.section;
+            if (section) {
+                app.toggleSettingsSection(section);
+                e.preventDefault();
+                return; // Prevent other handlers from firing
+            }
+        }
+    }
+
     // Settings Modal
     if (e.target.closest('#open-settings-modal')) app.openSettingsModal();
     if (e.target.closest('#close-settings-modal')) app.handleCancelSettings();

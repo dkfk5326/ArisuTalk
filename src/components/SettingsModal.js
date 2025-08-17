@@ -25,8 +25,8 @@ export function renderSettingsModal(app) {
                     <h3 class="text-lg font-semibold text-white">설정</h3>
                     <button id="close-settings-modal" class="p-1 hover:bg-gray-700 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
-                <div class="p-6 space-y-2 overflow-y-auto">
-                    <details class="group border-b border-gray-700 pb-2">
+                <div class="p-6 space-y-2 overflow-y-auto" id="settings-modal-content">
+                    <details data-section="ai" class="group border-b border-gray-700 pb-2" ${app.state.openSettingsSections.includes('ai') ? 'open' : ''}>
                         <summary class="flex items-center justify-between cursor-pointer list-none py-2">
                             <span class="text-base font-medium text-gray-200">AI 설정</span>
                             <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
@@ -52,7 +52,7 @@ export function renderSettingsModal(app) {
                             </div>
                         </div>
                     </details>
-                    <details class="group border-b border-gray-700 pb-2">
+                    <details data-section="scale" class="group border-b border-gray-700 pb-2" ${app.state.openSettingsSections.includes('scale') ? 'open' : ''}>
                         <summary class="flex items-center justify-between cursor-pointer list-none py-2">
                             <span class="text-base font-medium text-gray-200">배율</span>
                             <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
@@ -67,7 +67,7 @@ export function renderSettingsModal(app) {
                             </div>
                         </div>
                     </details>
-                    <details class="group border-b border-gray-700 pb-2">
+                    <details data-section="persona" class="group border-b border-gray-700 pb-2" ${app.state.openSettingsSections.includes('persona') ? 'open' : ''}>
                         <summary class="flex items-center justify-between cursor-pointer list-none py-2">
                             <span class="text-base font-medium text-gray-200">당신의 페르소나</span>
                             <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
@@ -85,7 +85,7 @@ export function renderSettingsModal(app) {
                             </div>
                         </div>
                     </details>
-                    <details class="group border-b border-gray-700 pb-2">
+                    <details data-section="proactive" class="group border-b border-gray-700 pb-2" ${app.state.openSettingsSections.includes('proactive') ? 'open' : ''}>
                         <summary class="flex items-center justify-between cursor-pointer list-none py-2">
                             <span class="text-base font-medium text-gray-200">선톡 설정</span>
                             <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
@@ -132,7 +132,7 @@ export function renderSettingsModal(app) {
                             </div>
                         </div>
                     </details>
-                    <details class="group border-b border-gray-700 pb-2">
+                    <details data-section="snapshots" class="group border-b border-gray-700 pb-2" ${app.state.openSettingsSections.includes('snapshots') ? 'open' : ''}>
                         <summary class="flex items-center justify-between cursor-pointer list-none py-2">
                             <span class="text-base font-medium text-gray-200">설정 스냅샷</span>
                             <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
@@ -155,7 +155,7 @@ export function renderSettingsModal(app) {
                             </div>
                         </div>
                     </details>
-                    <details class="group">
+                    <details data-section="data" class="group" ${app.state.openSettingsSections.includes('data') ? 'open' : ''}>
                         <summary class="flex items-center justify-between cursor-pointer list-none py-2">
                             <span class="text-base font-medium text-gray-200">데이터 관리</span>
                             <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>

@@ -42,7 +42,15 @@ export function render(app) {
 
     // Conditionally render modals to minimize DOM updates
     if (isFirstRender || shouldUpdateModals(oldState, newState)) {
+        const settingsContent = document.getElementById('settings-modal-content');
+        const scrollPosition = settingsContent ? settingsContent.scrollTop : 0;
+
         renderModals(app);
+
+        const newSettingsContent = document.getElementById('settings-modal-content');
+        if (newSettingsContent) {
+            newSettingsContent.scrollTop = scrollPosition;
+        }
     }
 
     lucide.createIcons();
@@ -88,15 +96,22 @@ function shouldUpdateModals(oldState, newState) {
     // If the settings modal is open, we don't re-render it just for settings changes.
     // This prevents the modal from resetting while the user is typing in input fields.
     if (newState.showSettingsModal && oldState.showSettingsModal) {
-        // Only re-render if snapshots change, otherwise keep the modal stable.
-        return JSON.stringify(oldState.settingsSnapshots) !== JSON.stringify(newState.settingsSnapshots);
+        // We need to check for specific state changes that require a re-render
+        // even when the settings modal is open.
+        return (
+            JSON.stringify(oldState.settingsSnapshots) !== JSON.stringify(newState.settingsSnapshots) ||
+            oldState.settings.model !== newState.settings.model ||
+            oldState.showPromptModal !== newState.showPromptModal ||
+            JSON.stringify(oldState.modal) !== JSON.stringify(newState.modal) ||
+            JSON.stringify(oldState.openSettingsSections) !== JSON.stringify(newState.openSettingsSections)
+        );
     }
 
     return (
         oldState.showSettingsModal !== newState.showSettingsModal ||
         oldState.showCharacterModal !== newState.showCharacterModal ||
         oldState.showPromptModal !== newState.showPromptModal ||
-        oldState.modal.isOpen !== newState.modal.isOpen ||
+        JSON.stringify(oldState.modal) !== JSON.stringify(newState.modal) ||
         (newState.showCharacterModal && JSON.stringify(oldState.editingCharacter) !== JSON.stringify(newState.editingCharacter)) ||
         (newState.showPromptModal && JSON.stringify(oldState.settings.prompts) !== JSON.stringify(newState.settings.prompts))
     );

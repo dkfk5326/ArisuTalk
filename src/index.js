@@ -77,6 +77,7 @@ class PersonaChatApp {
       selectedStickerIndices: [],
       showUserStickerPanel: false,
       expandedStickers: new Set(),
+      openSettingsSections: ['ai'],
     };
     this.oldState = null;
     this.messagesEndRef = null;
@@ -229,6 +230,14 @@ class PersonaChatApp {
       (s) => s.timestamp !== timestamp
     );
     this.setState({ settingsSnapshots: newSnapshots });
+  }
+
+  toggleSettingsSection(section) {
+    const openSections = this.state.openSettingsSections || [];
+    const newOpenSections = openSections.includes(section)
+        ? openSections.filter(s => s !== section)
+        : [...openSections, section];
+    this.setState({ openSettingsSections: newOpenSections });
   }
 
   async loadAllData() {
@@ -804,11 +813,13 @@ class PersonaChatApp {
     this.setState({
       settings: { ...this.state.settings, prompts: newPrompts },
       showPromptModal: false,
+      modal: {
+        isOpen: true,
+        title: language.modal.promptSaveComplete.title,
+        message: language.modal.promptSaveComplete.message,
+        onConfirm: null,
+      },
     });
-    this.showInfoModal(
-      language.modal.promptSaveComplete.title,
-      language.modal.promptSaveComplete.message
-    );
   }
 
   openNewCharacterModal() {
@@ -2279,6 +2290,12 @@ class PersonaChatApp {
               };
               this.setState({
                 settings: { ...this.state.settings, prompts: newPrompts },
+                modal: {
+                    isOpen: true,
+                    title: "불러오기 완료",
+                    message: "프롬프트를 성공적으로 불러왔습니다.",
+                    onConfirm: null
+                },
               });
             }
           );
