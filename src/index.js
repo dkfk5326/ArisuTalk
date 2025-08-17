@@ -251,13 +251,13 @@ class PersonaChatApp {
         userStickers,
         settingsSnapshots,
       ] = await Promise.all([
-        loadFromLocalStorage("personaChat_settings_v16", {}),
-        loadFromLocalStorage("personaChat_characters_v16", defaultCharacters),
-        loadFromLocalStorage("personaChat_chatRooms_v16", {}),
-        loadFromLocalStorage("personaChat_messages_v16", {}),
-        loadFromLocalStorage("personaChat_unreadCounts_v16", {}),
-        loadFromLocalStorage("personaChat_userStickers_v16", []),
-        loadFromLocalStorage("personaChat_settingsSnapshots_v16", []),
+        loadFromBrowserStorage("personaChat_settings_v16", {}),
+        loadFromBrowserStorage("personaChat_characters_v16", defaultCharacters),
+        loadFromBrowserStorage("personaChat_chatRooms_v16", {}),
+        loadFromBrowserStorage("personaChat_messages_v16", {}),
+        loadFromBrowserStorage("personaChat_unreadCounts_v16", {}),
+        loadFromBrowserStorage("personaChat_userStickers_v16", []),
+        loadFromBrowserStorage("personaChat_settingsSnapshots_v16", []),
       ]);
 
       this.state.settings = {
@@ -383,7 +383,7 @@ class PersonaChatApp {
 
   // --- CHAT ROOM MANAGEMENT ---
   async migrateChatData() {
-    const migrationCompleted = await loadFromLocalStorage(
+    const migrationCompleted = await loadFromBrowserStorage(
       "personaChat_migration_v16",
       false
     );
